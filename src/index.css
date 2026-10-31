@@ -50,6 +50,13 @@ html, body, #root {
   background: var(--bg-darkest);
 }
 
+/* No page pinch-zoom on mobile; timeline zoom stays on its +/- buttons. */
+@media (max-width: 768px) {
+  html, body {
+    touch-action: pan-x pan-y;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
