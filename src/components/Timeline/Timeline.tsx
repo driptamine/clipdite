@@ -1,7 +1,12 @@
-import { useCallback, useRef, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useMemo, useState } from 'react';
 import { cx } from '@linaria/core';
-import { useEditorStore } from '../../store/editorStore';
+import { useEditorStore, DEFAULT_TRACK_HEIGHT } from '../../store/editorStore';
 import { frameToTimecode } from '../../utils/time';
+import { displayOrder, findLinkedAudioTrack } from '../../utils/tracks';
+import { probeMediaFile } from '../../utils/mediaProbe';
+import { loadFileBlob } from '../../utils/mediaStorage';
+import ClipFilmstrip from './ClipFilmstrip';
+import ClipWavestrip from './ClipWavestrip';
 import {
   trackContentClassName,
   Panel,
@@ -11,6 +16,9 @@ import {
   PanelActionBtn,
   TimelineBody,
   TrackHeaders,
+  TrackHeadersSpacer,
+  TrackHeadersHandle,
+  TrackHeightHandle,
   TrackHeader,
   TrackHeaderAudio,
   TrackHeaderDropTarget,
@@ -30,15 +38,19 @@ import {
   TrackRowDropTarget,
   Clip,
   ClipSelected,
+  MarqueeBox,
   ClipVideo,
   ClipAudio,
   ClipInner,
   ClipName,
+  ClipTitle,
   ClipHandle,
   ClipHandleLeft,
   ClipHandleRight,
   Playhead,
   PlayheadTop,
+  HoverIndicator,
+  HoverTimeTag,
   SilenceTrack,
   ClipDropGhost,
   DropIndicatorLine,
@@ -57,23 +69,58 @@ interface DropIndicator {
 
 export default function Timeline() {
   const {
-    tracks, playback, zoom, selectedClipId, mediaItems,
+    tracks, playback, zoom, selectedClipIds, mediaItems,
+    activeTool, splitClip, selectClips, moveClips,
     setCurrentFrame, selectClip,
     toggleMuteTrack, toggleLockTrack, toggleVisibilityTrack,
-    addTrack, setZoom, addClipToTrack, setDragMediaId,
-    moveClip,
+    addTrack, setZoom, addClipToTrack, setDragMediaId, setTrackHeight, trimClip,
   } = useEditorStore();
 
   const tracksAreaRef = useRef<HTMLDivElement>(null);
+  const headersRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
+
+  // The headers column has no scrollbar of its own — it mirrors the tracks scroll.
+  const handleTracksScroll = useCallback(() => {
+    const area = tracksAreaRef.current;
+    const headers = headersRef.current;
+    if (area && headers) headers.scrollTop = area.scrollTop;
+  }, []);
+
+  // Headers column width, in px, saved with the rest of the layout.
+  const headersWidth = useEditorStore((s) => s.layout.headersWidth);
+  const startHeadersResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const initial = useEditorStore.getState().layout.headersWidth;
+    const handleMove = (moveE: MouseEvent) => {
+      useEditorStore.getState().setLayout({
+        headersWidth: Math.max(64, Math.min(320, initial + (moveE.clientX - startX))),
+      });
+    };
+    const handleUp = () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleUp);
+    };
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
+  }, []);
   const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null);
   const [hoveredTrackIndex, setHoveredTrackIndex] = useState<number | null>(null);
+  // Cursor-attached preview line (Premiere-style hover indicator).
+  const [hoverLeftPx, setHoverLeftPx] = useState<number | null>(null);
+  const hoverRafRef = useRef<number>(0);
+
+  useEffect(() => () => cancelAnimationFrame(hoverRafRef.current), []);
 
   const mediaLookup = useMemo(() => {
     const map = new Map<string, typeof mediaItems[0]>();
     for (const item of mediaItems) map.set(item.id, item);
     return map;
   }, [mediaItems]);
+
+  // V3/V2/V1 on top, then A1/A2 — array position means nothing.
+  const orderedTracks = useMemo(() => displayOrder(tracks), [tracks]);
 
   const framesPerPixel = useMemo(() => {
     return Math.max(1, 4 / zoom);
@@ -112,13 +159,161 @@ export default function Timeline() {
     return Math.max(0, Math.round(x * framesPerPixel));
   }, [framesPerPixel]);
 
+  const frameFromClientX = useCallback((clientX: number, containerEl: HTMLElement | null) => {
+    if (!containerEl) return 0;
+    const rect = containerEl.getBoundingClientRect();
+    const x = clientX - rect.left;
+    return Math.max(0, Math.round(x * framesPerPixel));
+  }, [framesPerPixel]);
+
+  // Clicking (or tapping) anywhere on the timeline — empty track space,
+  // a clip, or the time ruler — moves the playhead there.
+  const seekToClientX = useCallback((clientX: number, containerEl: HTMLElement | null) => {
+    setCurrentFrame(frameFromClientX(clientX, containerEl));
+  }, [frameFromClientX, setCurrentFrame]);
+
+  // Marquee (rubber-band) selection with the Selection tool: drag a rectangle
+  // over the tracks to select every clip it touches, then drag them as a group.
+  const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const marqueeStartRef = useRef<{ x: number; y: number } | null>(null);
+  // Viewport-space corners of the drawn box, for hit-testing clips on mouseup.
+  const marqueeBoxRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const marqueeDrawnRef = useRef(false);
+
+  const handleMarqueeStart = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    if (useEditorStore.getState().activeTool !== 'selection') return;
+    // Clips handle their own press (select / razor / drag) — marquee is for empty space.
+    if ((e.target as HTMLElement).closest('[data-clip-id]')) return;
+    const area = tracksAreaRef.current;
+    if (!area) return;
+    e.preventDefault();
+    const rect = area.getBoundingClientRect();
+    marqueeStartRef.current = {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top + area.scrollTop,
+    };
+    marqueeBoxRef.current = null;
+    marqueeDrawnRef.current = false;
+
+    const handleMove = (moveE: MouseEvent) => {
+      const start = marqueeStartRef.current;
+      if (!start) return;
+      const box = area.getBoundingClientRect();
+      const x = moveE.clientX - box.left;
+      const y = moveE.clientY - box.top + area.scrollTop;
+      if (Math.abs(x - start.x) + Math.abs(y - start.y) < 6) return;
+      marqueeDrawnRef.current = true;
+      marqueeBoxRef.current = {
+        x0: box.left + Math.min(start.x, x),
+        y0: box.top + Math.min(start.y, y) - area.scrollTop,
+        x1: box.left + Math.max(start.x, x),
+        y1: box.top + Math.max(start.y, y) - area.scrollTop,
+      };
+      setMarquee({
+        x: Math.min(start.x, x),
+        y: Math.min(start.y, y),
+        w: Math.abs(x - start.x),
+        h: Math.abs(y - start.y),
+      });
+    };
+
+    const handleUp = () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleUp);
+      marqueeStartRef.current = null;
+      const m = marqueeBoxRef.current;
+      marqueeBoxRef.current = null;
+      if (marqueeDrawnRef.current && m) {
+        const found: string[] = [];
+        area.querySelectorAll('[data-clip-id]').forEach((el) => {
+          const r = el.getBoundingClientRect();
+          if (r.left < m.x1 && r.right > m.x0 && r.top < m.y1 && r.bottom > m.y0) {
+            const id = (el as HTMLElement).dataset.clipId;
+            if (id) found.push(id);
+          }
+        });
+        selectClips(found);
+      }
+      setMarquee(null);
+    };
+
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
+  }, [selectClips]);
+
   const handleTimelineClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!tracksAreaRef.current) return;
-    const rect = tracksAreaRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left + tracksAreaRef.current.scrollLeft;
-    const frame = Math.max(0, Math.round(x * framesPerPixel));
-    setCurrentFrame(frame);
-  }, [framesPerPixel, setCurrentFrame]);
+    // A marquee drag ends with a click — don't seek on that one.
+    if (marqueeDrawnRef.current) {
+      marqueeDrawnRef.current = false;
+      return;
+    }
+    seekToClientX(e.clientX, tracksAreaRef.current);
+  }, [seekToClientX]);
+
+  // Track-row heights and clip edge trims share one drag protocol.
+  const trimmingRef = useRef(false);
+  const suppressSeekRef = useRef(false);
+
+  const startTrackResize = useCallback((e: React.MouseEvent, trackIndex: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY = e.clientY;
+    const initial = useEditorStore.getState().tracks.find((t) => t.index === trackIndex)?.height
+      ?? DEFAULT_TRACK_HEIGHT;
+    const handleMove = (moveE: MouseEvent) => {
+      setTrackHeight(
+        trackIndex,
+        Math.max(28, Math.min(160, initial + (moveE.clientY - startY))),
+      );
+    };
+    const handleUp = () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleUp);
+    };
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
+  }, [setTrackHeight]);
+
+  // Drag a clip's left/right edge to trim it (delta applied incrementally).
+  const startClipTrim = useCallback((e: React.MouseEvent, clipId: string, side: 'in' | 'out') => {
+    if (useEditorStore.getState().activeTool !== 'selection') return;
+    e.preventDefault();
+    e.stopPropagation();
+    trimmingRef.current = true;
+    const startX = e.clientX;
+    let applied = 0;
+    const handleMove = (moveE: MouseEvent) => {
+      const total = Math.round((moveE.clientX - startX) * framesPerPixel);
+      const diff = total - applied;
+      if (diff !== 0) {
+        applied = total;
+        trimClip(clipId, side, diff);
+      }
+    };
+    const handleUp = () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleUp);
+      trimmingRef.current = false;
+      suppressSeekRef.current = true;
+    };
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
+  }, [framesPerPixel, trimClip]);
+
+  // Follows the cursor over the ruler/tracks; throttled with rAF so
+  // hovering doesn't re-render the timeline more than once per frame.
+  const handleHoverMove = useCallback((e: React.MouseEvent<HTMLElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    cancelAnimationFrame(hoverRafRef.current);
+    hoverRafRef.current = requestAnimationFrame(() => setHoverLeftPx(x));
+  }, []);
+
+  const handleHoverLeave = useCallback(() => {
+    cancelAnimationFrame(hoverRafRef.current);
+    setHoverLeftPx(null);
+  }, []);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     if (e.ctrlKey || e.metaKey) {
@@ -128,10 +323,39 @@ export default function Timeline() {
     }
   }, [zoom, setZoom]);
 
-  const handleClipDragStart = useCallback((e: React.MouseEvent, clipId: string) => {
+  const handleClipClick = useCallback((e: React.MouseEvent, clipId: string) => {
     e.stopPropagation();
-    selectClip(clipId);
-  }, [selectClip]);
+    if (marqueeDrawnRef.current) {
+      marqueeDrawnRef.current = false;
+      return;
+    }
+    // A finished edge trim selects but does not seek.
+    if (suppressSeekRef.current) {
+      suppressSeekRef.current = false;
+      selectClip(clipId);
+      return;
+    }
+    // Razor: cut the clip under the cursor instead of seeking/selecting.
+    if (useEditorStore.getState().activeTool === 'razor') {
+      const trackEl = (e.currentTarget as HTMLElement).parentElement;
+      const frame = frameFromClientX(e.clientX, trackEl);
+      const trackIndex = Number(trackEl?.dataset.trackIndex);
+      splitClip(clipId, frame);
+      // Select the right-hand part produced by the cut.
+      const st = useEditorStore.getState();
+      const right = st.tracks
+        .find((t) => t.index === trackIndex)
+        ?.clips.find((c) => c.id !== clipId && c.startFrame === frame);
+      selectClip(right ? right.id : clipId);
+      return;
+    }
+    // Linked pair selects together (video stays primary).
+    const clicked = useEditorStore.getState().tracks.flatMap((t) => t.clips).find((c) => c.id === clipId);
+    if (clicked?.linkedClipId) selectClips([clicked.linkedClipId, clipId]);
+    else selectClip(clipId);
+    // A clip swallows the bubbled TracksArea click, so seek explicitly.
+    seekToClientX(e.clientX, (e.currentTarget as HTMLElement).parentElement);
+  }, [selectClip, selectClips, seekToClientX, frameFromClientX, splitClip]);
 
   const handleTrackDragOver = useCallback((e: React.DragEvent, trackIndex: number) => {
     const hasMedia = [...e.dataTransfer.types].includes('application/clipdite-media');
@@ -140,7 +364,7 @@ export default function Timeline() {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
 
-    const track = tracks[trackIndex];
+    const track = tracks.find((t) => t.index === trackIndex);
     if (!track || track.locked) return;
 
     const trackContent = (e.currentTarget as HTMLElement).querySelector(`.${trackContentClassName}`) as HTMLElement | null;
@@ -196,11 +420,28 @@ export default function Timeline() {
   }, []);
 
   const handleClipDragStartOnTimeline = useCallback((e: React.DragEvent, clipId: string) => {
+    // An edge trim is not a move — cancel the HTML5 drag.
+    if (trimmingRef.current) {
+      e.preventDefault();
+      return;
+    }
     e.stopPropagation();
-    e.dataTransfer.setData('application/clipdite-timeline-clip', clipId);
     e.dataTransfer.effectAllowed = 'move';
-    selectClip(clipId);
-  }, [selectClip]);
+    // Drag the whole marquee selection when the grabbed clip is part of it.
+    const st = useEditorStore.getState();
+    const ids = st.selectedClipIds.includes(clipId) && st.selectedClipIds.length > 1
+      ? st.selectedClipIds
+      : [clipId];
+    // Grab offset: where inside the clip the user took hold of it (in frames),
+    // so the drop lands the clip under the cursor instead of snapping its start there.
+    const dragged = st.tracks.flatMap((t) => t.clips).find((c) => c.id === clipId);
+    const trackContent = (e.currentTarget as HTMLElement).parentElement;
+    const grabOffset = dragged
+      ? Math.max(0, getFrameFromX(e.clientX, trackContent) - dragged.startFrame)
+      : 0;
+    e.dataTransfer.setData('application/clipdite-timeline-clips', JSON.stringify({ ids, draggedId: clipId, grabOffset }));
+    if (!st.selectedClipIds.includes(clipId)) selectClip(clipId);
+  }, [selectClip, getFrameFromX]);
 
   const handleClipDropOnTimeline = useCallback((e: React.DragEvent, targetTrackIndex: number) => {
     e.preventDefault();
@@ -208,12 +449,21 @@ export default function Timeline() {
     setDropIndicator(null);
     setHoveredTrackIndex(null);
 
-    const clipId = e.dataTransfer.getData('application/clipdite-timeline-clip');
-    if (clipId) {
-      const trackContent = (e.currentTarget as HTMLElement).querySelector(`.${trackContentClassName}`) as HTMLElement | null;
-      const frame = getFrameFromX(e.clientX, trackContent);
-      moveClip(clipId, frame, targetTrackIndex);
-      return;
+    const groupData = e.dataTransfer.getData('application/clipdite-timeline-clips');
+    if (groupData) {
+      try {
+        const { ids, draggedId, grabOffset } = JSON.parse(groupData) as { ids: string[]; draggedId: string; grabOffset?: number };
+        const st = useEditorStore.getState();
+        const dragged = st.tracks.flatMap((t) => t.clips).find((c) => c.id === draggedId);
+        if (dragged && ids.length > 0) {
+          const trackContent = (e.currentTarget as HTMLElement).querySelector(`.${trackContentClassName}`) as HTMLElement | null;
+          const frame = getFrameFromX(e.clientX, trackContent);
+          moveClips(ids, frame - (grabOffset ?? 0) - dragged.startFrame, targetTrackIndex - dragged.trackIndex);
+          return;
+        }
+      } catch {
+        // Malformed payload: fall through to media drop below.
+      }
     }
 
     const mediaId = e.dataTransfer.getData('application/clipdite-media');
@@ -221,12 +471,58 @@ export default function Timeline() {
     const media = mediaLookup.get(mediaId);
     if (!media) return;
 
-    const track = tracks[targetTrackIndex];
+    const track = tracks.find((t) => t.index === targetTrackIndex);
     if (!track || track.locked) return;
 
     const trackContent = (e.currentTarget as HTMLElement).querySelector(`.${trackContentClassName}`) as HTMLElement | null;
     const frame = getFrameFromX(e.clientX, trackContent);
     const durationFrames = Math.round(media.duration * playback.fps);
+
+    // Premiere-style: a video with sound lands as a linked pair —
+    // picture on the video track, sound on the audio track below.
+    if (media.type === 'video' && track.type === 'video') {
+      const videoClip = {
+        mediaId: media.id,
+        trackIndex: track.index,
+        startFrame: frame,
+        durationInFrames: durationFrames,
+        inPoint: 0,
+        outPoint: durationFrames,
+        effects: [],
+        opacity: 100,
+        volume: 0,
+      };
+      const drop = async () => {
+        let hasAudio = media.hasAudio;
+        if (hasAudio === undefined) {
+          try {
+            const blob = await loadFileBlob(media.id);
+            if (blob) {
+              const probed = await probeMediaFile(blob);
+              hasAudio = probed.hasAudio;
+              useEditorStore.getState().setMediaHasAudio(media.id, hasAudio);
+            } else {
+              hasAudio = false;
+            }
+          } catch {
+            hasAudio = false;
+          }
+        }
+        if (hasAudio) {
+          // Numbered mate (V2 -> A2), else first unlocked audio track.
+          const audioTrack = findLinkedAudioTrack(useEditorStore.getState().tracks, track);
+          if (audioTrack) {
+            useEditorStore.getState().addClipPair(videoClip, { ...videoClip, trackIndex: audioTrack.index });
+            setDragMediaId(null);
+            return;
+          }
+        }
+        addClipToTrack(videoClip);
+        setDragMediaId(null);
+      };
+      void drop();
+      return;
+    }
 
     addClipToTrack({
       mediaId: media.id,
@@ -241,7 +537,7 @@ export default function Timeline() {
     });
 
     setDragMediaId(null);
-  }, [mediaLookup, tracks, playback.fps, addClipToTrack, moveClip, setDragMediaId, getFrameFromX]);
+  }, [mediaLookup, tracks, playback.fps, addClipToTrack, moveClips, setDragMediaId, getFrameFromX]);
 
   return (
     <Panel>
@@ -265,15 +561,18 @@ export default function Timeline() {
       </PanelHeader>
 
       <TimelineBody>
-        <TrackHeaders>
-          {tracks.map((track) => (
+        <TrackHeaders ref={headersRef} style={{ width: `${headersWidth}px` }}>
+          <TrackHeadersSpacer />
+          {orderedTracks.map((track) => (
             <TrackHeader
               key={track.id}
               className={cx(
                 track.type === 'audio' && TrackHeaderAudio,
                 hoveredTrackIndex === track.index && TrackHeaderDropTarget,
               )}
+              style={{ height: `${track.height ?? DEFAULT_TRACK_HEIGHT}px` }}
             >
+              <TrackHeightHandle onMouseDown={(e) => startTrackResize(e, track.index)} />
               <TrackName>{track.name}</TrackName>
               {track.type === 'video' && (
                 <TrackBtn
@@ -338,8 +637,15 @@ export default function Timeline() {
           </AddTrackBtn>
         </TrackHeaders>
 
+        <TrackHeadersHandle onMouseDown={startHeadersResize} />
+
         <TimelineTracksContainer>
-          <TimeRuler ref={rulerRef}>
+          <TimeRuler
+            ref={rulerRef}
+            onClick={(e) => seekToClientX(e.clientX, rulerRef.current)}
+            onMouseMove={handleHoverMove}
+            onMouseLeave={handleHoverLeave}
+          >
             {timeMarkers.map((marker, i) => (
               <TimeMarker
                 key={i}
@@ -357,19 +663,25 @@ export default function Timeline() {
             ref={tracksAreaRef}
             onClick={handleTimelineClick}
             onWheel={handleWheel}
+            onScroll={handleTracksScroll}
+            onMouseMove={handleHoverMove}
+            onMouseLeave={handleHoverLeave}
+            onMouseDown={handleMarqueeStart}
+            style={activeTool === 'razor' ? { cursor: 'crosshair' } : undefined}
           >
-            {tracks.map((track) => (
+            {orderedTracks.map((track) => (
               <TrackRow
                 key={track.id}
                 className={cx(
                   track.type === 'audio' && TrackRowAudio,
                   hoveredTrackIndex === track.index && TrackRowDropTarget,
                 )}
+                style={{ height: `${track.height ?? DEFAULT_TRACK_HEIGHT}px` }}
                 onDragOver={(e) => handleTrackDragOver(e, track.index)}
                 onDragLeave={handleTrackDragLeave}
                 onDrop={(e) => handleClipDropOnTimeline(e, track.index)}
               >
-                <div className={`${TrackContent} ${trackContentClassName}`}>
+                <div className={`${TrackContent} ${trackContentClassName}`} data-track-index={track.index}>
                   {track.clips.length === 0 && dropIndicator?.trackIndex !== track.index && (
                     <SilenceTrack>No clips</SilenceTrack>
                   )}
@@ -381,17 +693,30 @@ export default function Timeline() {
                     return (
                       <Clip
                         key={clip.id}
+                        data-clip-id={clip.id}
                         className={cx(
                           track.type === 'video' ? ClipVideo : ClipAudio,
-                          selectedClipId === clip.id && ClipSelected,
+                          selectedClipIds.includes(clip.id) && ClipSelected,
                         )}
-                        style={{ left: `${left}px`, width: `${Math.max(20, width)}px` }}
-                        onClick={(e) => handleClipDragStart(e, clip.id)}
-                        draggable
+                        style={{ left: `${left}px`, width: `${Math.max(20, width)}px`, cursor: activeTool === 'razor' ? 'crosshair' : undefined }}
+                        onClick={(e) => handleClipClick(e, clip.id)}
+                        draggable={activeTool !== 'razor'}
                         onDragStart={(e) => handleClipDragStartOnTimeline(e, clip.id)}
                       >
-                        <ClipHandle className={cx(ClipHandleLeft)} />
-                        <ClipInner>
+                        <ClipHandle
+                          className={cx(ClipHandleLeft)}
+                          onMouseDown={(e) => startClipTrim(e, clip.id, 'in')}
+                        />
+                        {media && media.type === 'video' && media.url && (
+                          <ClipFilmstrip media={media} clip={clip} fps={playback.fps} />
+                        )}
+                        {media && media.type === 'audio' && media.url && (
+                          <ClipWavestrip media={media} clip={clip} fps={playback.fps} />
+                        )}
+                        <ClipTitle>
+                          <ClipName>{clipName}</ClipName>
+                        </ClipTitle>
+                        <ClipInner style={{ position: 'relative', zIndex: 1 }}>
                           {media && (media.type === 'video' || media.type === 'image') && (
                             <ClipIcon>
                               <svg viewBox="0 0 24 24" fill="currentColor" width="10" height="10">
@@ -406,9 +731,11 @@ export default function Timeline() {
                               </svg>
                             </ClipIcon>
                           )}
-                          <ClipName>{clipName}</ClipName>
                         </ClipInner>
-                        <ClipHandle className={cx(ClipHandleRight)} />
+                        <ClipHandle
+                          className={cx(ClipHandleRight)}
+                          onMouseDown={(e) => startClipTrim(e, clip.id, 'out')}
+                        />
                       </Clip>
                     );
                   })}
@@ -442,6 +769,18 @@ export default function Timeline() {
             <Playhead style={{ left: `${playheadLeft}px` }}>
               <PlayheadTop />
             </Playhead>
+            {marquee && (
+              <MarqueeBox
+                style={{ left: `${marquee.x}px`, top: `${marquee.y}px`, width: `${marquee.w}px`, height: `${marquee.h}px` }}
+              />
+            )}
+            {hoverLeftPx !== null && (
+              <HoverIndicator style={{ left: `${hoverLeftPx}px` }}>
+                <HoverTimeTag>
+                  {frameToTimecode(Math.max(0, Math.round(hoverLeftPx * framesPerPixel)), playback.fps).substring(3)}
+                </HoverTimeTag>
+              </HoverIndicator>
+            )}
           </TracksArea>
         </TimelineTracksContainer>
       </TimelineBody>

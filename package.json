@@ -12,6 +12,7 @@
   "dependencies": {
     "@linaria/core": "^8.0.0",
     "@linaria/react": "^8.0.0",
+    "mediabunny": "^1.65.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "uuid": "^14.0.1",

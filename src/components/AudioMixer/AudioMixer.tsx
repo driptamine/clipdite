@@ -27,7 +27,7 @@ export default function AudioMixer() {
   const [levels] = useState<Record<number, number>>({ 0: 75, 1: 60, 2: 45, 3: 50 });
 
   const audioTracks = useMemo(
-    () => tracks.filter((t) => t.type === 'audio'),
+    () => tracks.filter((t) => t.type === 'audio').sort((a, b) => a.index - b.index),
     [tracks]
   );
 

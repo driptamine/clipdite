@@ -23,13 +23,15 @@ export const TopPanels = styled.div`
 `;
 
 export const TopLeft = styled.div`
-  flex: 1;
+  flex: none;
   min-width: 200px;
+  overflow: hidden;
 `;
 
 export const TopRight = styled.div`
-  flex: 1;
+  flex: none;
   min-width: 200px;
+  overflow: hidden;
 `;
 
 export const BottomArea = styled.div`
@@ -40,14 +42,28 @@ export const BottomArea = styled.div`
 `;
 
 export const TimelineArea = styled.div`
-  flex: 1;
+  flex: none;
   min-width: 300px;
+  overflow: hidden;
 `;
 
 export const BottomSidebar = styled.div`
   width: 280px;
   min-width: 200px;
   flex-shrink: 0;
+`;
+
+export const BottomProject = styled.div`
+  flex: none;
+  min-width: 160px;
+  overflow: hidden;
+`;
+
+export const BottomRight = styled.div`
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
 `;
 
 export const ResizeHandleHorizontal = styled.div`

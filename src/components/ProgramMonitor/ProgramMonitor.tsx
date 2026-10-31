@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cx } from '@linaria/core';
 import { useEditorStore } from '../../store/editorStore';
 import { frameToTimecode } from '../../utils/time';
@@ -26,8 +26,10 @@ import {
 } from './ProgramMonitor.styles';
 
 export default function ProgramMonitor() {
-  const { playback, togglePlay, stopPlayback, stepFrame, setCurrentFrame, project, tracks } = useEditorStore();
+  const { playback, togglePlay, stopPlayback, stepFrame, setCurrentFrame, project, tracks, mediaItems } = useEditorStore();
   const scrubberRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [audioBlocked, setAudioBlocked] = useState(false);
 
   const handleScrub = useCallback((e: React.MouseEvent) => {
     if (!scrubberRef.current) return;
@@ -41,6 +43,75 @@ export default function ProgramMonitor() {
     : 0;
 
   const totalClips = tracks.reduce((acc, t) => acc + t.clips.length, 0);
+
+  const mediaLookup = useMemo(() => {
+    const map = new Map<string, typeof mediaItems[0]>();
+    for (const item of mediaItems) map.set(item.id, item);
+    return map;
+  }, [mediaItems]);
+
+  // Topmost visible video clip under the playhead (highest track index wins).
+  const activeVideo = useMemo(() => {
+    const frame = playback.currentFrame;
+    let best: { clip: (typeof tracks)[number]['clips'][number]; trackIndex: number } | null = null;
+    for (const track of tracks) {
+      if (track.type !== 'video' || !track.visible) continue;
+      for (const clip of track.clips) {
+        if (frame >= clip.startFrame && frame < clip.startFrame + clip.durationInFrames) {
+          if (!best || track.index > best.trackIndex) best = { clip, trackIndex: track.index };
+        }
+      }
+    }
+    if (!best) return null;
+    const media = mediaLookup.get(best.clip.mediaId);
+    if (!media?.url) return null;
+    return { clip: best.clip, media };
+  }, [tracks, playback.currentFrame, mediaLookup]);
+
+  // Source-time offset (seconds) of the playhead inside the active clip.
+  const sourceOffset = activeVideo
+    ? Math.min(
+        Math.max(0, (playback.currentFrame - activeVideo.clip.startFrame + activeVideo.clip.inPoint) / playback.fps),
+        Math.max(0, activeVideo.media.duration - 0.05),
+      )
+    : 0;
+
+  // Seek the video element whenever the playhead moves (pause, step, scrub,
+  // clip change) and correct drift while playing.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !activeVideo || activeVideo.media.type !== 'video') return;
+    if (!Number.isFinite(sourceOffset)) return;
+    if (video.readyState < 1) return;
+    const drift = Math.abs(video.currentTime - sourceOffset);
+    if (!playback.isPlaying || drift > 0.35) {
+      try { video.currentTime = sourceOffset; } catch { /* seek while loading */ }
+    }
+  }, [playback.currentFrame, playback.isPlaying, activeVideo, sourceOffset]);
+
+  // Space (or the transport button) toggles real video playback.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !activeVideo || activeVideo.media.type !== 'video') return;
+    if (playback.isPlaying) {
+      const attempt = video.play();
+      if (attempt) {
+        attempt.catch(() => {
+          // Autoplay policy blocked sound: fall back to muted playback.
+          setAudioBlocked(true);
+          video.muted = true;
+          video.play().catch(() => undefined);
+        });
+      }
+    } else {
+      video.pause();
+    }
+  }, [playback.isPlaying, activeVideo]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video) video.playbackRate = 1;
+  }, [activeVideo?.media.id]);
 
   return (
     <Panel>
@@ -74,13 +145,29 @@ export default function ProgramMonitor() {
           </ResolutionInfo>
           {totalClips === 0 ? (
             <EmptyPreview>Drop clips on the timeline to preview</EmptyPreview>
+          ) : activeVideo && activeVideo.media.type === 'video' ? (
+            <video
+              key={activeVideo.media.id}
+              ref={videoRef}
+              src={activeVideo.media.url}
+              style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
+              muted={playback.volume === 0 || audioBlocked}
+              playsInline
+              preload="auto"
+            />
+          ) : activeVideo && activeVideo.media.type === 'image' ? (
+            <img
+              src={activeVideo.media.url}
+              alt={activeVideo.media.name}
+              style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
+            />
           ) : (
             <EmptyPreview>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" style={{ width: 60, height: 60, opacity: 0.2, marginBottom: 8 }}>
                 <rect x="2" y="4" width="20" height="16" rx="2" />
                 <path d="M10 9l5 3-5 3V9z" />
               </svg>
-              <div>Program Monitor</div>
+              <div>No clip under playhead</div>
             </EmptyPreview>
           )}
         </PreviewCanvas>

@@ -1,4 +1,8 @@
 :root {
+  /* The UI is natively dark: this opts the page out of Chrome's
+     forced AutoDark (chrome://flags), which would otherwise invert
+     images such as the ClipFilmstrip thumbnails. */
+  color-scheme: dark;
   --bg-darkest: #1a1a1e;
   --bg-dark: #232329;
   --bg-panel: #2a2a32;

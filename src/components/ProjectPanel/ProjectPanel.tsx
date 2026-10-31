@@ -1,7 +1,10 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import { cx } from '@linaria/core';
+import { v4 as uuidv4 } from 'uuid';
 import { useEditorStore } from '../../store/editorStore';
 import { formatDuration } from '../../utils/time';
+import { probeMediaFile } from '../../utils/mediaProbe';
+import { saveFileBlob } from '../../utils/mediaStorage';
 import {
   Panel,
   PanelHeader,
@@ -23,8 +26,13 @@ import {
 } from './ProjectPanel.styles';
 
 export default function ProjectPanel() {
-  const { mediaItems, selectedMediaId, selectMediaItem, addMediaItem, setDragMediaId } = useEditorStore();
+  const { mediaItems, selectedMediaId, selectMediaItem, importMediaItem, setDragMediaId, importNonce } = useEditorStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // File > Import Media (menubar) opens this panel's file dialog.
+  useEffect(() => {
+    if (importNonce > 0) fileInputRef.current?.click();
+  }, [importNonce]);
 
   const handleFiles = useCallback((files: FileList | null) => {
     if (!files) return;
@@ -35,47 +43,43 @@ export default function ProjectPanel() {
 
       if (!isVideo && !isAudio && !isImage) continue;
 
+      const id = uuidv4();
       const url = URL.createObjectURL(file);
+      // Keep the original bytes in IndexedDB so the media (and every
+      // timeline edit that references it) survives a page reload.
+      saveFileBlob(id, file).catch(() => undefined);
 
-      if (isVideo) {
-        const video = document.createElement('video');
-        video.preload = 'metadata';
-        video.onloadedmetadata = () => {
-          addMediaItem({
-            name: file.name,
-            type: 'video',
-            duration: video.duration,
-            width: video.videoWidth,
-            height: video.videoHeight,
-            url,
-            source: 'upload',
-          });
-        };
-        video.src = url;
-      } else if (isAudio) {
-        const audio = document.createElement('audio');
-        audio.preload = 'metadata';
-        audio.onloadedmetadata = () => {
-          addMediaItem({
-            name: file.name,
-            type: 'audio',
-            duration: audio.duration,
-            url,
-            source: 'upload',
-          });
-        };
-        audio.src = url;
-      } else {
-        addMediaItem({
+      if (isImage) {
+        importMediaItem({
+          id,
           name: file.name,
           type: 'image',
           duration: 5,
           url,
           source: 'upload',
+          createdAt: Date.now(),
+          hasAudio: false,
         });
+        continue;
       }
+
+      // Duration / dimensions / audio presence come from MediaBunny, never from FFmpeg.
+      probeMediaFile(file).then((probed) => {
+        importMediaItem({
+          id,
+          name: file.name,
+          type: isVideo ? 'video' : 'audio',
+          duration: probed.duration > 0 ? probed.duration : 5,
+          width: probed.width,
+          height: probed.height,
+          url,
+          source: 'upload',
+          createdAt: Date.now(),
+          hasAudio: probed.hasAudio,
+        });
+      });
     }
-  }, [addMediaItem]);
+  }, [importMediaItem]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();

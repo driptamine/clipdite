@@ -77,15 +77,57 @@ export const TrackHeaders = styled.div`
   background: var(--bg-panel-header);
   border-right: 1px solid var(--border-subtle);
   overflow-y: auto;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+`;
+
+// Drag handle between the headers column and the tracks.
+export const TrackHeadersHandle = styled.div`
+  width: 4px;
+  flex-shrink: 0;
+  cursor: ew-resize;
+  background: transparent;
+
+  &:hover {
+    background: var(--bg-clip-video);
+  }
+`;
+
+// Matches TimeRuler (24px + 1px border) so header rows sit exactly
+// level with their track rows.
+export const TrackHeadersSpacer = styled.div`
+  height: 25px;
+  flex-shrink: 0;
+  background: var(--bg-panel-header);
+  border-bottom: 1px solid var(--border-subtle);
 `;
 
 export const TrackHeader = styled.div`
   display: flex;
   align-items: center;
+  position: relative;
   height: var(--track-height);
   padding: 0 4px;
   gap: 2px;
   border-bottom: 1px solid var(--border-subtle);
+`;
+
+// Drag the bottom edge of a header to resize that track's row height.
+export const TrackHeightHandle = styled.div`
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 6px;
+  cursor: ns-resize;
+  z-index: 5;
+
+  &:hover {
+    background: var(--bg-clip-video);
+  }
 `;
 
 export const TrackHeaderAudio = css`
@@ -273,6 +315,25 @@ export const ClipName = styled.span`
   pointer-events: none;
 `;
 
+// Title strip pinned to the top of the clip, above the filmstrip,
+// with the clip name inside (Premiere-style clip header).
+export const ClipTitle = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 15px;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  background: #1e40af;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px 4px 0 0;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+`;
+
 export const ClipHandle = styled.div`
   position: absolute;
   top: 0;
@@ -319,6 +380,29 @@ export const PlayheadTop = styled.div`
   cursor: ew-resize;
 `;
 
+export const HoverIndicator = styled.div`
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.5);
+  z-index: 9;
+  pointer-events: none;
+`;
+
+export const HoverTimeTag = styled.div`
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.75);
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+`;
+
 export const SilenceTrack = styled.div`
   display: flex;
   align-items: center;
@@ -344,6 +428,14 @@ export const ClipDropGhost = css`
   animation: dropPulse 1s ease-in-out infinite;
 
   ${dropPulseKeyframes}
+`;
+
+export const MarqueeBox = styled.div`
+  position: absolute;
+  border: 1px solid rgba(59, 130, 246, 0.9);
+  background: rgba(59, 130, 246, 0.15);
+  z-index: 20;
+  pointer-events: none;
 `;
 
 export const DropIndicatorLine = styled.div`

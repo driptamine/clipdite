@@ -1,23 +1,30 @@
+import { cx } from '@linaria/core';
 import { useEditorStore } from '../../store/editorStore';
+import { runTimelineExport } from '../../utils/exportVideo';
 import {
   ToolbarRoot,
   ToolGroup,
   ToolSeparator,
   ToolButton,
   ToolButtonActive,
-  ProjectName,
   ZoomControls,
   ZoomButton,
   ZoomLevel,
+  ExportButton,
 } from './Toolbar.styles';
 
 export default function Toolbar() {
-  const { zoom, setZoom, project } = useEditorStore();
+  const { zoom, setZoom, exportStatus, activeTool, setActiveTool } = useEditorStore();
+  const isExporting = exportStatus.phase === 'working';
 
   return (
     <ToolbarRoot>
       <ToolGroup>
-        <ToolButton className={ToolButtonActive} title="Selection Tool (V)">
+        <ToolButton
+          className={cx(activeTool === 'selection' && ToolButtonActive)}
+          title="Selection Tool (V)"
+          onClick={() => setActiveTool('selection')}
+        >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
           </svg>
@@ -33,7 +40,11 @@ export default function Toolbar() {
             <path d="M12 2v4m0 12v4m10-10h-4M6 12H2" />
           </svg>
         </ToolButton>
-        <ToolButton title="Razor Tool (C)">
+        <ToolButton
+          className={cx(activeTool === 'razor' && ToolButtonActive)}
+          title="Razor Tool (C)"
+          onClick={() => setActiveTool(activeTool === 'razor' ? 'selection' : 'razor')}
+        >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="6" cy="6" r="3" />
             <circle cx="6" cy="18" r="3" />
@@ -78,7 +89,15 @@ export default function Toolbar() {
         </ToolButton>
       </ToolGroup>
 
-      <ProjectName>{project.name}</ProjectName>
+      <ExportButton
+        onClick={() => void runTimelineExport()}
+        disabled={isExporting}
+        title={isExporting ? `Exporting ${exportStatus.progress}%` : 'Export selected clip as MP4 (MediaBunny)'}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+        </svg>
+      </ExportButton>
 
       <ZoomControls>
         <ZoomButton onClick={() => setZoom(zoom - 0.25)} title="Zoom Out">−</ZoomButton>

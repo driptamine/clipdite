@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react';
+import { cx } from '@linaria/core';
 import { useEditorStore } from '../../store/editorStore';
 import { frameToTimecode } from '../../utils/time';
 import {
@@ -20,6 +22,36 @@ import {
 export default function SourceMonitor() {
   const { selectedMediaId, mediaItems, playback } = useEditorStore();
   const selectedMedia = mediaItems.find((m) => m.id === selectedMediaId);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+
+  // Reset local preview state when selection changes.
+  useEffect(() => {
+    setIsPreviewPlaying(false);
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = 0;
+    }
+  }, [selectedMediaId]);
+
+  const togglePreview = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      video.play().then(() => setIsPreviewPlaying(true)).catch(() => undefined);
+    } else {
+      video.pause();
+      setIsPreviewPlaying(false);
+    }
+  };
+
+  const stepPreview = (delta: number) => {
+    const video = videoRef.current;
+    if (!video || !Number.isFinite(video.duration)) return;
+    video.pause();
+    setIsPreviewPlaying(false);
+    video.currentTime = Math.max(0, Math.min(video.duration, video.currentTime + delta));
+  };
 
   return (
     <Panel>
@@ -44,9 +76,14 @@ export default function SourceMonitor() {
           <PreviewContent>
             {selectedMedia.type === 'video' ? (
               <video
+                key={selectedMedia.id}
+                ref={videoRef}
                 src={selectedMedia.url}
                 style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                 muted
+                playsInline
+                preload="metadata"
+                onEnded={() => setIsPreviewPlaying(false)}
               />
             ) : selectedMedia.type === 'image' ? (
               <img
@@ -83,17 +120,28 @@ export default function SourceMonitor() {
       <TimecodeBar>
         <Timecode>{frameToTimecode(playback.currentFrame, playback.fps)}</Timecode>
         <Controls>
-          <ControlBtn title="Previous Frame">
+          <ControlBtn title="Previous Frame" onClick={() => stepPreview(-1 / 30)}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M19 20L9 12l10-8v16zM5 19V5" />
             </svg>
           </ControlBtn>
-          <ControlBtn className={ControlBtnPlay} title="Play">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M8 5v14l11-7z" />
-            </svg>
+          <ControlBtn
+            className={cx(ControlBtnPlay)}
+            title={isPreviewPlaying ? 'Pause' : 'Play'}
+            onClick={togglePreview}
+          >
+            {isPreviewPlaying ? (
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="4" width="4" height="16" />
+                <rect x="14" y="4" width="4" height="16" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
           </ControlBtn>
-          <ControlBtn title="Next Frame">
+          <ControlBtn title="Next Frame" onClick={() => stepPreview(1 / 30)}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M5 4l10 8-10 8V4zM19 5v14" />
             </svg>

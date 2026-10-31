@@ -3,27 +3,30 @@ import { styled } from '@linaria/react';
 
 export const ToolbarRoot = styled.div`
   display: flex;
+  flex-direction: column;
   align-items: center;
-  height: 36px;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border-subtle);
-  padding: 0 8px;
-  gap: 2px;
+  width: 52px;
+  height: 100%;
   flex-shrink: 0;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-subtle);
+  padding: 8px 0;
+  gap: 6px;
 `;
 
 export const ToolGroup = styled.div`
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 1px;
-  padding: 0 4px;
+  padding: 4px 0;
 `;
 
 export const ToolSeparator = styled.div`
-  width: 1px;
-  height: 20px;
+  width: 20px;
+  height: 1px;
   background: var(--border-color);
-  margin: 0 4px;
+  margin: 4px 0;
 `;
 
 export const ToolButton = styled.button`
@@ -57,18 +60,12 @@ export const ToolButtonActive = css`
   }
 `;
 
-export const ProjectName = styled.span`
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--text-muted);
-  padding-right: 8px;
-`;
-
 export const ZoomControls = styled.div`
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 4px;
-  margin-left: 8px;
+  margin-top: auto;
 `;
 
 export const ZoomButton = styled.button`
@@ -88,8 +85,33 @@ export const ZoomButton = styled.button`
 `;
 
 export const ZoomLevel = styled.span`
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-secondary);
   min-width: 36px;
   text-align: center;
+`;
+
+export const ExportButton = styled.button`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  background: var(--bg-clip-video);
+  color: white;
+
+  &:hover:not(:disabled) {
+    background: #3b82f6;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: wait;
+  }
+
+  & svg {
+    width: 16px;
+    height: 16px;
+  }
 `;

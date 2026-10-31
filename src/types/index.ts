@@ -9,6 +9,8 @@ export interface MediaItem {
   thumbnail?: string;
   source: 'upload' | 'generated';
   createdAt: number;
+  /** Whether the source has an audio stream (probed by MediaBunny). */
+  hasAudio?: boolean;
 }
 
 export interface TimelineClip {
@@ -22,6 +24,8 @@ export interface TimelineClip {
   effects: Effect[];
   opacity: number;
   volume: number;
+  /** Premiere-style link: the paired video/audio clip that travels together. */
+  linkedClipId?: string;
 }
 
 export interface Track {
@@ -32,6 +36,8 @@ export interface Track {
   muted: boolean;
   locked: boolean;
   visible: boolean;
+  /** Row height in px (default 48, resizable via the header edge). */
+  height: number;
   clips: TimelineClip[];
 }
 
@@ -61,4 +67,19 @@ export interface ProjectState {
   height: number;
   fps: number;
   durationInFrames: number;
+}
+
+export interface LayoutState {
+  /** Top/bottom split: height % of the upper (monitors) area. */
+  topHeight: number;
+  /** Project panel width % inside the top area. */
+  leftWidth: number;
+  /** Source monitor width % inside the monitors row. */
+  monitorsSplit: number;
+  /** Timeline width % inside the bottom area. */
+  timelineSplit: number;
+  /** Track headers column width in px. */
+  headersWidth: number;
+  /** Bottom-left project panel width % inside the bottom area. */
+  bottomLeft: number;
 }
