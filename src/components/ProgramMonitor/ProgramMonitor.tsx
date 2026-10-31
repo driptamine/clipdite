@@ -76,24 +76,40 @@ export default function ProgramMonitor() {
       )
     : 0;
 
-  // Seek the video element whenever the playhead moves (pause, step, scrub,
-  // clip change) and correct drift while playing.
+  // Seek the video element while paused (step, scrub, clip change).
+  // While playing the element is left alone: repeated currentTime writes
+  // stall the audio track on mobile browsers.
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !activeVideo || activeVideo.media.type !== 'video') return;
+    if (playback.isPlaying) return;
     if (!Number.isFinite(sourceOffset)) return;
     if (video.readyState < 1) return;
-    const drift = Math.abs(video.currentTime - sourceOffset);
-    if (!playback.isPlaying || drift > 0.35) {
-      try { video.currentTime = sourceOffset; } catch { /* seek while loading */ }
+    try { video.currentTime = sourceOffset; } catch { /* seek while loading */ }
+  }, [playback.currentFrame, playback.isPlaying, activeVideo, sourceOffset]);
+
+  // While playing, resync only after a huge jump (e.g. tab switch).
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !activeVideo || activeVideo.media.type !== 'video') return;
+    if (!playback.isPlaying) return;
+    if (video.readyState < 1 || !Number.isFinite(sourceOffset)) return;
+    if (Math.abs(video.currentTime - sourceOffset) > 2) {
+      try { video.currentTime = sourceOffset; } catch { /* ignore */ }
     }
   }, [playback.currentFrame, playback.isPlaying, activeVideo, sourceOffset]);
 
   // Space (or the transport button) toggles real video playback.
+  // wasPlayingRef aligns the frame once on (re)start, then hands off.
+  const wasPlayingRef = useRef(false);
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !activeVideo || activeVideo.media.type !== 'video') return;
     if (playback.isPlaying) {
+      if (!wasPlayingRef.current && video.readyState >= 1 && Number.isFinite(sourceOffset)) {
+        try { video.currentTime = sourceOffset; } catch { /* seek while loading */ }
+      }
+      wasPlayingRef.current = true;
       const attempt = video.play();
       if (attempt) {
         attempt.catch(() => {
@@ -104,9 +120,10 @@ export default function ProgramMonitor() {
         });
       }
     } else {
+      wasPlayingRef.current = false;
       video.pause();
     }
-  }, [playback.isPlaying, activeVideo]);
+  }, [playback.isPlaying, activeVideo, sourceOffset]);
 
   useEffect(() => {
     const video = videoRef.current;

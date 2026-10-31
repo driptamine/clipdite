@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { cx } from '@linaria/core';
 import { useEditorStore, DEFAULT_TRACK_HEIGHT } from '../../store/editorStore';
 import { frameToTimecode } from '../../utils/time';
@@ -28,6 +29,7 @@ import {
   AddTrackBtn,
   TimelineTracksContainer,
   TimeRuler,
+  MobileRuler,
   TimeMarker,
   TimeMarkerLine,
   TimeMarkerLineLong,
@@ -79,6 +81,7 @@ export default function Timeline() {
   const tracksAreaRef = useRef<HTMLDivElement>(null);
   const headersRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
+  const innerRulerRef = useRef<HTMLDivElement>(null);
 
   // The headers column has no scrollbar of its own — it mirrors the tracks scroll.
   const handleTracksScroll = useCallback(() => {
@@ -155,6 +158,7 @@ export default function Timeline() {
   }, [totalFrames, playback.fps, zoom]);
 
   const playheadLeft = playback.currentFrame / framesPerPixel;
+  const totalWidth = totalFrames / framesPerPixel;
 
   const getFrameFromX = useCallback((clientX: number, trackContentEl: HTMLElement | null) => {
     if (!trackContentEl) return 0;
@@ -195,24 +199,24 @@ export default function Timeline() {
     e.preventDefault();
     const rect = area.getBoundingClientRect();
     marqueeStartRef.current = {
-      x: e.clientX - rect.left,
+      x: e.clientX - rect.left + area.scrollLeft,
       y: e.clientY - rect.top + area.scrollTop,
     };
     marqueeBoxRef.current = null;
     marqueeDrawnRef.current = false;
 
-    const handleMove = (moveE: MouseEvent) => {
+    const handleMove = (moveE: PointerEvent) => {
       const start = marqueeStartRef.current;
       if (!start) return;
       const box = area.getBoundingClientRect();
-      const x = moveE.clientX - box.left;
+      const x = moveE.clientX - box.left + area.scrollLeft;
       const y = moveE.clientY - box.top + area.scrollTop;
       if (Math.abs(x - start.x) + Math.abs(y - start.y) < 6) return;
       marqueeDrawnRef.current = true;
       marqueeBoxRef.current = {
-        x0: box.left + Math.min(start.x, x),
+        x0: box.left + Math.min(start.x, x) - area.scrollLeft,
         y0: box.top + Math.min(start.y, y) - area.scrollTop,
-        x1: box.left + Math.max(start.x, x),
+        x1: box.left + Math.max(start.x, x) - area.scrollLeft,
         y1: box.top + Math.max(start.y, y) - area.scrollTop,
       };
       setMarquee({
@@ -249,10 +253,52 @@ export default function Timeline() {
     document.addEventListener('pointercancel', handleUp);
   }, [selectClips]);
 
+  // Two-finger pinch zoom on the tracks (mobile). Pure observer: no
+  // preventDefault, so native scroll keeps working alongside.
+  const pinchPointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinchBase = useRef<{ dist: number; zoom: number } | null>(null);
+  const pinchMovedRef = useRef(false);
+
+  const pinchDist = (m: Map<number, { x: number; y: number }>) => {
+    const [a, b] = [...m.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  };
+
+  const handlePinchDown = useCallback((e: React.PointerEvent) => {
+    const m = pinchPointers.current;
+    m.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (m.size === 2) {
+      pinchBase.current = { dist: Math.max(1, pinchDist(m)), zoom: useEditorStore.getState().zoom };
+    }
+  }, []);
+
+  const handlePinchMove = useCallback((e: React.PointerEvent) => {
+    const m = pinchPointers.current;
+    if (!m.has(e.pointerId)) return;
+    m.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const base = pinchBase.current;
+    if (m.size === 2 && base) {
+      pinchMovedRef.current = true;
+      const ratio = pinchDist(m) / base.dist;
+      if (Number.isFinite(ratio) && ratio > 0) {
+        useEditorStore.getState().setZoom(base.zoom * ratio);
+      }
+    }
+  }, []);
+
+  const handlePinchUp = useCallback((e: React.PointerEvent) => {
+    pinchPointers.current.delete(e.pointerId);
+    if (pinchPointers.current.size < 2) pinchBase.current = null;
+  }, []);
+
   const handleTimelineClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    // A marquee drag ends with a click — don't seek on that one.
+    // A marquee drag or a pinch zoom ends with a click — don't seek on those.
     if (marqueeDrawnRef.current) {
       marqueeDrawnRef.current = false;
+      return;
+    }
+    if (pinchMovedRef.current) {
+      pinchMovedRef.current = false;
       return;
     }
     seekToClientX(e.clientX, tracksAreaRef.current);
@@ -315,8 +361,9 @@ export default function Timeline() {
   // Follows the cursor over the ruler/tracks; throttled with rAF so
   // hovering doesn't re-render the timeline more than once per frame.
   const handleHoverMove = useCallback((e: React.MouseEvent<HTMLElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    const x = e.clientX - rect.left + el.scrollLeft;
     cancelAnimationFrame(hoverRafRef.current);
     hoverRafRef.current = requestAnimationFrame(() => setHoverLeftPx(x));
   }, []);
@@ -338,6 +385,10 @@ export default function Timeline() {
     e.stopPropagation();
     if (marqueeDrawnRef.current) {
       marqueeDrawnRef.current = false;
+      return;
+    }
+    if (pinchMovedRef.current) {
+      pinchMovedRef.current = false;
       return;
     }
     // A finished edge trim selects but does not seek.
@@ -677,9 +728,32 @@ export default function Timeline() {
             onScroll={handleTracksScroll}
             onMouseMove={handleHoverMove}
             onMouseLeave={handleHoverLeave}
-            onPointerDown={handleMarqueeStart}
-            style={activeTool === 'razor' ? { cursor: 'crosshair' } : undefined}
+            onPointerDown={(e) => { handleMarqueeStart(e); handlePinchDown(e); }}
+            onPointerMove={handlePinchMove}
+            onPointerUp={handlePinchUp}
+            onPointerCancel={handlePinchUp}
+            style={{
+              ...(activeTool === 'razor' ? { cursor: 'crosshair' } : {}),
+              '--tl-w': `${totalWidth}px`,
+            } as CSSProperties}
           >
+            <MobileRuler
+              ref={innerRulerRef}
+              style={{ width: `${totalWidth}px` }}
+              onClick={(e) => seekToClientX(e.clientX, innerRulerRef.current)}
+            >
+              {timeMarkers.map((marker, i) => (
+                <TimeMarker
+                  key={i}
+                  style={{ left: `${(marker.frame / framesPerPixel)}px` }}
+                >
+                  <span>{marker.label}</span>
+                  <TimeMarkerLine
+                    className={cx(marker.major && TimeMarkerLineLong)}
+                  />
+                </TimeMarker>
+              ))}
+            </MobileRuler>
             {orderedTracks.map((track) => (
               <TrackRow
                 key={track.id}

@@ -9,6 +9,11 @@ export const trackContentClassName = css`
   &:hover {
     background: rgba(255, 255, 255, 0.01);
   }
+
+  @media (max-width: 768px) {
+    flex: none;
+    width: var(--tl-w, 100%);
+  }
 `;
 
 export const Panel = styled.div`
@@ -220,6 +225,29 @@ export const TimeRuler = styled.div`
   position: relative;
   overflow: hidden;
   flex-shrink: 0;
+
+  @media (max-width: 768px) {
+    display: none;
+  }
+`;
+
+// Mobile-only duplicate ruler living INSIDE the scrollable tracks area:
+// it scrolls horizontally together with the clips (sticky on top),
+// so markers never drift apart from the content.
+export const MobileRuler = styled.div`
+  display: none;
+
+  @media (max-width: 768px) {
+    display: block;
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    height: 24px;
+    flex-shrink: 0;
+    background: var(--bg-panel-header);
+    border-bottom: 1px solid var(--border-subtle);
+    overflow: hidden;
+  }
 `;
 
 export const TimeMarker = styled.div`
@@ -253,6 +281,10 @@ export const TracksArea = styled.div`
   overflow-y: auto;
   overflow-x: hidden;
   position: relative;
+
+  @media (max-width: 768px) {
+    overflow-x: auto;
+  }
 `;
 
 export const TrackRow = styled.div`
@@ -260,6 +292,10 @@ export const TrackRow = styled.div`
   height: var(--track-height);
   border-bottom: 1px solid var(--border-subtle);
   position: relative;
+
+  @media (max-width: 768px) {
+    width: var(--tl-w, 100%);
+  }
 `;
 
 export const TrackRowAudio = css`
