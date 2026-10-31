@@ -1,4 +1,6 @@
+import { css } from '@linaria/core';
 import { styled } from '@linaria/react';
+import { ToolbarRoot } from './components/Toolbar/Toolbar.styles';
 
 export const App = styled.div`
   display: flex;
@@ -99,11 +101,21 @@ export const StatusBar = styled.div`
   padding: 0 8px;
   gap: 16px;
   flex-shrink: 0;
+
+  @media (max-width: 768px) {
+    gap: 10px;
+    overflow-x: auto;
+  }
 `;
 
 export const StatusItem = styled.span`
   font-size: 10px;
   color: var(--text-muted);
+
+  @media (max-width: 768px) {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
 `;
 
 export const StatusDot = styled.span`
@@ -113,4 +125,76 @@ export const StatusDot = styled.span`
   border-radius: 50%;
   background: #10b981;
   margin-right: 4px;
+`;
+
+// ---------------------------------------------------------------------------
+// Mobile (max-width: 768px). Everything above stays exactly as-is on desktop;
+// the rules below only reflow the layout on narrow screens. Multitrack
+// timeline (V1/V2/V3 rows) is preserved — rows keep their order and heights.
+// ---------------------------------------------------------------------------
+
+/** Program-only monitors on mobile; Source stays mounted but hidden. */
+export const MonitorsRow = css`
+  @media (max-width: 768px) {
+    flex-direction: column;
+
+    & > div:first-child {
+      display: none;
+    }
+
+    & > div:last-child {
+      width: 100% !important;
+      height: 100%;
+      min-height: 0;
+    }
+
+    & ${ResizeHandleVertical} {
+      display: none;
+    }
+  }
+`;
+
+/** Bottom reflow: project / timeline / effects / toolbar last, scrollable. */
+export const BottomAreaMobile = css`
+  @media (max-width: 768px) {
+    flex-direction: column;
+    overflow-y: auto;
+
+    & > ${BottomProject} {
+      width: 100% !important;
+      height: 140px;
+      flex: none;
+      order: 1;
+    }
+
+    & > ${ResizeHandleVertical} {
+      display: none;
+    }
+
+    & > ${ToolbarRoot} {
+      order: 3;
+    }
+
+    & > ${BottomRight} {
+      flex-direction: column;
+      flex: none;
+      order: 2;
+
+      & ${TimelineArea} {
+        width: 100% !important;
+        height: 340px;
+        flex: none;
+      }
+
+      & ${ResizeHandleVertical} {
+        display: none;
+      }
+
+      & ${BottomSidebar} {
+        width: 100% !important;
+        height: 200px;
+        flex: none;
+      }
+    }
+  }
 `;

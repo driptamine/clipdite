@@ -11,15 +11,37 @@ import {
   ZoomButton,
   ZoomLevel,
   ExportButton,
+  ToolbarMobile,
+  ToolGroupMobile,
+  ToolSeparatorMobile,
+  ZoomControlsMobile,
 } from './Toolbar.styles';
 
-export default function Toolbar() {
+interface ToolbarProps {
+  /** Mobile-only: folder icon that toggles the collapsible project panel. */
+  showProjectToggle?: boolean;
+  projectOpen?: boolean;
+  onToggleProject?: () => void;
+}
+
+export default function Toolbar({ showProjectToggle = false, projectOpen = false, onToggleProject }: ToolbarProps) {
   const { zoom, setZoom, exportStatus, activeTool, setActiveTool } = useEditorStore();
   const isExporting = exportStatus.phase === 'working';
 
   return (
-    <ToolbarRoot>
-      <ToolGroup>
+    <ToolbarRoot className={ToolbarMobile}>
+      {showProjectToggle && (
+        <ToolButton
+          className={cx(projectOpen && ToolButtonActive)}
+          title="Project Panel"
+          onClick={onToggleProject}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+          </svg>
+        </ToolButton>
+      )}
+      <ToolGroup className={ToolGroupMobile}>
         <ToolButton
           className={cx(activeTool === 'selection' && ToolButtonActive)}
           title="Selection Tool (V)"
@@ -55,9 +77,9 @@ export default function Toolbar() {
         </ToolButton>
       </ToolGroup>
 
-      <ToolSeparator />
+      <ToolSeparator className={ToolSeparatorMobile} />
 
-      <ToolGroup>
+      <ToolGroup className={ToolGroupMobile}>
         <ToolButton title="Slip Tool (Y)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="3" y="6" width="18" height="12" rx="2" />
@@ -99,7 +121,7 @@ export default function Toolbar() {
         </svg>
       </ExportButton>
 
-      <ZoomControls>
+      <ZoomControls className={ZoomControlsMobile}>
         <ZoomButton onClick={() => setZoom(zoom - 0.25)} title="Zoom Out">−</ZoomButton>
         <ZoomLevel>{Math.round(zoom * 100)}%</ZoomLevel>
         <ZoomButton onClick={() => setZoom(zoom + 0.25)} title="Zoom In">+</ZoomButton>

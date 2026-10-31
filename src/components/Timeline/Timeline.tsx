@@ -93,9 +93,11 @@ export default function Timeline() {
     e.preventDefault();
     const startX = e.clientX;
     const initial = useEditorStore.getState().layout.headersWidth;
+    // Mobile: no practical lower limit — squeeze as narrow as needed.
+    const minW = window.matchMedia('(max-width: 768px)').matches ? 24 : 64;
     const handleMove = (moveE: MouseEvent) => {
       useEditorStore.getState().setLayout({
-        headersWidth: Math.max(64, Math.min(320, initial + (moveE.clientX - startX))),
+        headersWidth: Math.max(minW, Math.min(320, initial + (moveE.clientX - startX))),
       });
     };
     const handleUp = () => {

@@ -68,6 +68,48 @@ export const ZoomControls = styled.div`
   margin-top: auto;
 `;
 
+// Mobile: the bottom-center bar becomes horizontal.
+export const ToolbarMobile = css`
+  @media (max-width: 768px) {
+    flex-direction: row;
+    width: 100%;
+    height: 52px;
+    flex: none;
+    padding: 0 8px;
+    gap: 6px;
+    overflow-x: auto;
+    border-right: none;
+    border-top: 1px solid var(--border-subtle);
+    /* Pinned to the viewport bottom while the column scrolls. */
+    position: sticky;
+    bottom: 0;
+    z-index: 40;
+  }
+`;
+
+export const ToolGroupMobile = css`
+  @media (max-width: 768px) {
+    flex-direction: row;
+    padding: 0 4px;
+  }
+`;
+
+export const ToolSeparatorMobile = css`
+  @media (max-width: 768px) {
+    width: 1px;
+    height: 20px;
+    margin: 0 4px;
+  }
+`;
+
+export const ZoomControlsMobile = css`
+  @media (max-width: 768px) {
+    flex-direction: row;
+    margin-top: 0;
+    margin-left: auto;
+  }
+`;
+
 export const ZoomButton = styled.button`
   display: flex;
   align-items: center;

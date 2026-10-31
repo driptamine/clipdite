@@ -82,6 +82,10 @@ export const TrackHeaders = styled.div`
   &::-webkit-scrollbar {
     display: none;
   }
+
+  @media (max-width: 768px) {
+    max-width: 38vw;
+  }
 `;
 
 // Drag handle between the headers column and the tracks.
@@ -113,6 +117,10 @@ export const TrackHeader = styled.div`
   padding: 0 4px;
   gap: 2px;
   border-bottom: 1px solid var(--border-subtle);
+
+  @media (max-width: 768px) {
+    overflow: hidden;
+  }
 `;
 
 // Drag the bottom edge of a header to resize that track's row height.
@@ -127,6 +135,10 @@ export const TrackHeightHandle = styled.div`
 
   &:hover {
     background: var(--bg-clip-video);
+  }
+
+  @media (max-width: 768px) {
+    height: 12px;
   }
 `;
 
@@ -144,6 +156,11 @@ export const TrackName = styled.span`
   min-width: 24px;
   text-align: center;
   font-weight: 500;
+
+  @media (max-width: 768px) {
+    min-width: 0;
+    overflow: hidden;
+  }
 `;
 
 export const TrackBtn = styled.button`
@@ -344,6 +361,10 @@ export const ClipHandle = styled.div`
 
   &:hover {
     background: rgba(255, 255, 255, 0.3);
+  }
+
+  @media (max-width: 768px) {
+    width: 12px;
   }
 `;
 

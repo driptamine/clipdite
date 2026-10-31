@@ -11,6 +11,10 @@ export const MenubarRoot = styled.div`
   gap: 0;
   user-select: none;
   flex-shrink: 0;
+
+  @media (max-width: 768px) {
+    display: none;
+  }
 `;
 
 export const MenuItem = styled.div`

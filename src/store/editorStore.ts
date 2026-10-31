@@ -177,7 +177,7 @@ export const useEditorStore = create<EditorState>((set) => ({
               leftWidth: clamp(num(l.leftWidth, 35), 15, 70),
               monitorsSplit: clamp(num(l.monitorsSplit, 50), 20, 80),
               timelineSplit: clamp(num(l.timelineSplit, 72), 25, 85),
-              headersWidth: clamp(num(l.headersWidth, 120), 64, 320),
+              headersWidth: clamp(num(l.headersWidth, 120), 24, 320),
               bottomLeft: clamp(num(l.bottomLeft, 20), 10, 40),
             }
           : state.layout,

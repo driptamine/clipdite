@@ -56,6 +56,10 @@
 плейбэк (`setPlayback`, `togglePlay`, `stopPlayback`, `stepFrame`, `setCurrentFrame`),
 раскладка (`layout`/`setLayout` — `topHeight`, `monitorsSplit`, `timelineSplit`,
 `headersWidth`, `bottomLeft` (низ: проект слева, тулбар центр, таймлайн справа), сохраняется),
+мобильная версия — только media queries ≤768px (десктоп не тронут): только Program
+(менюбар и Source скрыты), низ — проект / таймлайн / эффекты / тулбар в самом низу,
+панель проекта скрыта по дефолту, открывается иконкой папки в тулбаре,
+дорожки V1–V3 сохраняются,
 проект/сессия (`hydrate`, `setHydrated`, `setProjectName`, `newProject`, `markSaved`,
 `requestImport`, `exportStatus`/`setExportStatus`).
 

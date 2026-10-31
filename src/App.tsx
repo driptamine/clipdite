@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import { useEditorStore } from './store/editorStore';
 import { frameToTimecode } from './utils/time';
 import { ensureHydrated, startPersisting, saveNow } from './utils/persist';
@@ -21,6 +21,8 @@ import {
   BottomSidebar,
   ResizeHandleHorizontal,
   ResizeHandleVertical,
+  MonitorsRow,
+  BottomAreaMobile,
   StatusBar,
   StatusItem,
   StatusDot,
@@ -40,6 +42,19 @@ export default function App() {
   const layout = useEditorStore((s) => s.layout);
   const setLayout = useEditorStore((s) => s.setLayout);
   const { topHeight, monitorsSplit, timelineSplit, bottomLeft } = layout;
+
+  // Mobile-only: project panel starts hidden and opens on tap.
+  // Desktop renders exactly as before (isMobile=false -> unchanged tree).
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileProjectOpen, setMobileProjectOpen] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const onChange = () => setIsMobile(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  const showProject = !isMobile || mobileProjectOpen;
 
   // Timeline clock: reads fresh store state every tick (no stale closure),
   // keeps fractional frames so Space playback runs at true fps.
@@ -195,7 +210,7 @@ export default function App() {
       <MainContent>
         <TopPanels style={{ height: `${topHeight}%` }}>
           <TopRight style={{ width: '100%' }}>
-            <div style={{ display: 'flex', height: '100%' }}>
+            <div className={MonitorsRow} style={{ display: 'flex', height: '100%' }}>
               <div style={{ width: `${monitorsSplit}%`, minWidth: 0, overflow: 'hidden' }}>
                 <SourceMonitor />
               </div>
@@ -212,13 +227,21 @@ export default function App() {
           onMouseDown={(e) => startSplitDrag(e, 'y', topHeight, 20, 80, (v) => setLayout({ topHeight: v }))}
         />
 
-        <BottomArea style={{ height: `${100 - topHeight}%` }}>
-          <BottomProject style={{ width: `${bottomLeft}%` }}>
-            <ProjectPanel />
-          </BottomProject>
-          <ResizeHandleVertical
-            onMouseDown={(e) => startSplitDrag(e, 'x', bottomLeft, 10, 40, (v) => setLayout({ bottomLeft: v }))} />
-          <Toolbar />
+        <BottomArea className={BottomAreaMobile} style={{ height: `${100 - topHeight}%` }}>
+          {showProject && (
+            <BottomProject style={{ width: `${bottomLeft}%` }}>
+              <ProjectPanel />
+            </BottomProject>
+          )}
+          {showProject && (
+            <ResizeHandleVertical
+              onMouseDown={(e) => startSplitDrag(e, 'x', bottomLeft, 10, 40, (v) => setLayout({ bottomLeft: v }))} />
+          )}
+          <Toolbar
+            showProjectToggle={isMobile}
+            projectOpen={mobileProjectOpen}
+            onToggleProject={() => setMobileProjectOpen((v) => !v)}
+          />
           <BottomRight>
             <TimelineArea style={{ width: `${timelineSplit}%` }}>
               <Timeline />
