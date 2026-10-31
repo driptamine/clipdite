@@ -157,8 +157,9 @@ export default function App() {
 
   // One drag helper for every splitter: the handle's parent is the flex
   // container, so percent math always measures against the right box.
+  // Pointer events (not mouse) so resizes also drag with a finger.
   const startSplitDrag = useCallback((
-    e: React.MouseEvent,
+    e: React.PointerEvent,
     axis: 'x' | 'y',
     initial: number,
     min: number,
@@ -172,18 +173,20 @@ export default function App() {
     const size = axis === 'x' ? container.clientWidth : container.clientHeight;
     if (size <= 0) return;
 
-    const handleMove = (moveE: MouseEvent) => {
+    const handleMove = (moveE: PointerEvent) => {
       const pos = axis === 'x' ? moveE.clientX : moveE.clientY;
       onChange(Math.max(min, Math.min(max, initial + ((pos - startPos) / size) * 100)));
     };
 
     const handleUp = () => {
-      document.removeEventListener('mousemove', handleMove);
-      document.removeEventListener('mouseup', handleUp);
+      document.removeEventListener('pointermove', handleMove);
+      document.removeEventListener('pointerup', handleUp);
+      document.removeEventListener('pointercancel', handleUp);
     };
 
-    document.addEventListener('mousemove', handleMove);
-    document.addEventListener('mouseup', handleUp);
+    document.addEventListener('pointermove', handleMove);
+    document.addEventListener('pointerup', handleUp);
+    document.addEventListener('pointercancel', handleUp);
   }, []);
 
   useEffect(() => {
@@ -215,7 +218,7 @@ export default function App() {
                 <SourceMonitor />
               </div>
               <ResizeHandleVertical
-                onMouseDown={(e) => startSplitDrag(e, 'x', monitorsSplit, 20, 80, (v) => setLayout({ monitorsSplit: v }))} />
+                onPointerDown={(e) => startSplitDrag(e, 'x', monitorsSplit, 20, 80, (v) => setLayout({ monitorsSplit: v }))} />
               <div style={{ width: `${100 - monitorsSplit}%`, minWidth: 0, overflow: 'hidden' }}>
                 <ProgramMonitor />
               </div>
@@ -224,7 +227,7 @@ export default function App() {
         </TopPanels>
 
         <ResizeHandleHorizontal
-          onMouseDown={(e) => startSplitDrag(e, 'y', topHeight, 20, 80, (v) => setLayout({ topHeight: v }))}
+          onPointerDown={(e) => startSplitDrag(e, 'y', topHeight, 20, 80, (v) => setLayout({ topHeight: v }))}
         />
 
         <BottomArea className={BottomAreaMobile} style={{ height: `${100 - topHeight}%` }}>
@@ -235,7 +238,7 @@ export default function App() {
           )}
           {showProject && (
             <ResizeHandleVertical
-              onMouseDown={(e) => startSplitDrag(e, 'x', bottomLeft, 10, 40, (v) => setLayout({ bottomLeft: v }))} />
+              onPointerDown={(e) => startSplitDrag(e, 'x', bottomLeft, 10, 40, (v) => setLayout({ bottomLeft: v }))} />
           )}
           <Toolbar
             showProjectToggle={isMobile}
@@ -247,7 +250,7 @@ export default function App() {
               <Timeline />
             </TimelineArea>
             <ResizeHandleVertical
-              onMouseDown={(e) => startSplitDrag(e, 'x', timelineSplit, 25, 85, (v) => setLayout({ timelineSplit: v }))} />
+              onPointerDown={(e) => startSplitDrag(e, 'x', timelineSplit, 25, 85, (v) => setLayout({ timelineSplit: v }))} />
             <BottomSidebar style={{ width: `${100 - timelineSplit}%` }}>
               <EffectsPanel />
             </BottomSidebar>

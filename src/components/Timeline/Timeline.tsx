@@ -89,23 +89,25 @@ export default function Timeline() {
 
   // Headers column width, in px, saved with the rest of the layout.
   const headersWidth = useEditorStore((s) => s.layout.headersWidth);
-  const startHeadersResize = useCallback((e: React.MouseEvent) => {
+  const startHeadersResize = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     const startX = e.clientX;
     const initial = useEditorStore.getState().layout.headersWidth;
     // Mobile: no practical lower limit — squeeze as narrow as needed.
     const minW = window.matchMedia('(max-width: 768px)').matches ? 24 : 64;
-    const handleMove = (moveE: MouseEvent) => {
+    const handleMove = (moveE: PointerEvent) => {
       useEditorStore.getState().setLayout({
         headersWidth: Math.max(minW, Math.min(320, initial + (moveE.clientX - startX))),
       });
     };
     const handleUp = () => {
-      document.removeEventListener('mousemove', handleMove);
-      document.removeEventListener('mouseup', handleUp);
+      document.removeEventListener('pointermove', handleMove);
+      document.removeEventListener('pointerup', handleUp);
+      document.removeEventListener('pointercancel', handleUp);
     };
-    document.addEventListener('mousemove', handleMove);
-    document.addEventListener('mouseup', handleUp);
+    document.addEventListener('pointermove', handleMove);
+    document.addEventListener('pointerup', handleUp);
+    document.addEventListener('pointercancel', handleUp);
   }, []);
   const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null);
   const [hoveredTrackIndex, setHoveredTrackIndex] = useState<number | null>(null);
@@ -182,8 +184,9 @@ export default function Timeline() {
   const marqueeBoxRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const marqueeDrawnRef = useRef(false);
 
-  const handleMarqueeStart = useCallback((e: React.MouseEvent) => {
-    if (e.button !== 0) return;
+  const handleMarqueeStart = useCallback((e: React.PointerEvent) => {
+    // Mouse only: fingers scroll the tracks instead of drawing a marquee.
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
     if (useEditorStore.getState().activeTool !== 'selection') return;
     // Clips handle their own press (select / razor / drag) — marquee is for empty space.
     if ((e.target as HTMLElement).closest('[data-clip-id]')) return;
@@ -221,8 +224,9 @@ export default function Timeline() {
     };
 
     const handleUp = () => {
-      document.removeEventListener('mousemove', handleMove);
-      document.removeEventListener('mouseup', handleUp);
+      document.removeEventListener('pointermove', handleMove);
+      document.removeEventListener('pointerup', handleUp);
+      document.removeEventListener('pointercancel', handleUp);
       marqueeStartRef.current = null;
       const m = marqueeBoxRef.current;
       marqueeBoxRef.current = null;
@@ -240,8 +244,9 @@ export default function Timeline() {
       setMarquee(null);
     };
 
-    document.addEventListener('mousemove', handleMove);
-    document.addEventListener('mouseup', handleUp);
+    document.addEventListener('pointermove', handleMove);
+    document.addEventListener('pointerup', handleUp);
+    document.addEventListener('pointercancel', handleUp);
   }, [selectClips]);
 
   const handleTimelineClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -257,7 +262,7 @@ export default function Timeline() {
   const trimmingRef = useRef(false);
   const suppressSeekRef = useRef(false);
 
-  const startTrackResize = useCallback((e: React.MouseEvent, trackIndex: number) => {
+  const startTrackResize = useCallback((e: React.PointerEvent, trackIndex: number) => {
     e.preventDefault();
     e.stopPropagation();
     const startY = e.clientY;
@@ -270,15 +275,17 @@ export default function Timeline() {
       );
     };
     const handleUp = () => {
-      document.removeEventListener('mousemove', handleMove);
-      document.removeEventListener('mouseup', handleUp);
+      document.removeEventListener('pointermove', handleMove);
+      document.removeEventListener('pointerup', handleUp);
+      document.removeEventListener('pointercancel', handleUp);
     };
-    document.addEventListener('mousemove', handleMove);
-    document.addEventListener('mouseup', handleUp);
+    document.addEventListener('pointermove', handleMove);
+    document.addEventListener('pointerup', handleUp);
+    document.addEventListener('pointercancel', handleUp);
   }, [setTrackHeight]);
 
   // Drag a clip's left/right edge to trim it (delta applied incrementally).
-  const startClipTrim = useCallback((e: React.MouseEvent, clipId: string, side: 'in' | 'out') => {
+  const startClipTrim = useCallback((e: React.PointerEvent, clipId: string, side: 'in' | 'out') => {
     if (useEditorStore.getState().activeTool !== 'selection') return;
     e.preventDefault();
     e.stopPropagation();
@@ -294,13 +301,15 @@ export default function Timeline() {
       }
     };
     const handleUp = () => {
-      document.removeEventListener('mousemove', handleMove);
-      document.removeEventListener('mouseup', handleUp);
+      document.removeEventListener('pointermove', handleMove);
+      document.removeEventListener('pointerup', handleUp);
+      document.removeEventListener('pointercancel', handleUp);
       trimmingRef.current = false;
       suppressSeekRef.current = true;
     };
-    document.addEventListener('mousemove', handleMove);
-    document.addEventListener('mouseup', handleUp);
+    document.addEventListener('pointermove', handleMove);
+    document.addEventListener('pointerup', handleUp);
+    document.addEventListener('pointercancel', handleUp);
   }, [framesPerPixel, trimClip]);
 
   // Follows the cursor over the ruler/tracks; throttled with rAF so
@@ -574,7 +583,7 @@ export default function Timeline() {
               )}
               style={{ height: `${track.height ?? DEFAULT_TRACK_HEIGHT}px` }}
             >
-              <TrackHeightHandle onMouseDown={(e) => startTrackResize(e, track.index)} />
+              <TrackHeightHandle onPointerDown={(e) => startTrackResize(e, track.index)} />
               <TrackName>{track.name}</TrackName>
               {track.type === 'video' && (
                 <TrackBtn
@@ -639,7 +648,7 @@ export default function Timeline() {
           </AddTrackBtn>
         </TrackHeaders>
 
-        <TrackHeadersHandle onMouseDown={startHeadersResize} />
+        <TrackHeadersHandle onPointerDown={startHeadersResize} />
 
         <TimelineTracksContainer>
           <TimeRuler
@@ -668,7 +677,7 @@ export default function Timeline() {
             onScroll={handleTracksScroll}
             onMouseMove={handleHoverMove}
             onMouseLeave={handleHoverLeave}
-            onMouseDown={handleMarqueeStart}
+            onPointerDown={handleMarqueeStart}
             style={activeTool === 'razor' ? { cursor: 'crosshair' } : undefined}
           >
             {orderedTracks.map((track) => (
@@ -707,7 +716,7 @@ export default function Timeline() {
                       >
                         <ClipHandle
                           className={cx(ClipHandleLeft)}
-                          onMouseDown={(e) => startClipTrim(e, clip.id, 'in')}
+                          onPointerDown={(e) => startClipTrim(e, clip.id, 'in')}
                         />
                         {media && media.type === 'video' && media.url && (
                           <ClipFilmstrip media={media} clip={clip} fps={playback.fps} />
@@ -736,7 +745,7 @@ export default function Timeline() {
                         </ClipInner>
                         <ClipHandle
                           className={cx(ClipHandleRight)}
-                          onMouseDown={(e) => startClipTrim(e, clip.id, 'out')}
+                          onPointerDown={(e) => startClipTrim(e, clip.id, 'out')}
                         />
                       </Clip>
                     );

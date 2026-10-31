@@ -94,6 +94,7 @@ export const TrackHeadersHandle = styled.div`
   flex-shrink: 0;
   cursor: ew-resize;
   background: transparent;
+  touch-action: none;
 
   &:hover {
     background: var(--bg-clip-video);
@@ -132,6 +133,7 @@ export const TrackHeightHandle = styled.div`
   height: 6px;
   cursor: ns-resize;
   z-index: 5;
+  touch-action: none;
 
   &:hover {
     background: var(--bg-clip-video);
@@ -358,6 +360,7 @@ export const ClipHandle = styled.div`
   width: 6px;
   cursor: col-resize;
   z-index: 2;
+  touch-action: none;
 
   &:hover {
     background: rgba(255, 255, 255, 0.3);

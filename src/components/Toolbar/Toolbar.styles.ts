@@ -80,9 +80,11 @@ export const ToolbarMobile = css`
     overflow-x: auto;
     border-right: none;
     border-top: 1px solid var(--border-subtle);
-    /* Pinned to the viewport bottom while the column scrolls. */
-    position: sticky;
-    bottom: 0;
+    /* Always on screen: pinned above the status bar, not scrolling away. */
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 22px;
     z-index: 40;
   }
 `;

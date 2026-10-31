@@ -74,6 +74,7 @@ export const ResizeHandleHorizontal = styled.div`
   background: var(--border-subtle);
   cursor: ns-resize;
   flex-shrink: 0;
+  touch-action: none;
 
   &:hover {
     background: var(--bg-clip-video);
@@ -86,6 +87,7 @@ export const ResizeHandleVertical = styled.div`
   background: var(--border-subtle);
   cursor: ew-resize;
   flex-shrink: 0;
+  touch-action: none;
 
   &:hover {
     background: var(--bg-clip-video);
@@ -159,6 +161,8 @@ export const BottomAreaMobile = css`
   @media (max-width: 768px) {
     flex-direction: column;
     overflow-y: auto;
+    /* Fixed toolbar overlaps the tail: keep it reachable. */
+    padding-bottom: 52px;
 
     & > ${BottomProject} {
       width: 100% !important;
