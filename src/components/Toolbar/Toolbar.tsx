@@ -25,7 +25,7 @@ interface ToolbarProps {
 }
 
 export default function Toolbar({ showProjectToggle = false, projectOpen = false, onToggleProject }: ToolbarProps) {
-  const { zoom, setZoom, exportStatus, activeTool, setActiveTool } = useEditorStore();
+  const { zoom, setZoom, exportStatus, activeTool, setActiveTool, selectedClipIds, removeClip } = useEditorStore();
   const isExporting = exportStatus.phase === 'working';
 
   return (
@@ -42,6 +42,18 @@ export default function Toolbar({ showProjectToggle = false, projectOpen = false
         </ToolButton>
       )}
       <ToolGroup className={ToolGroupMobile}>
+        <ToolButton
+          title="Delete selected clips (Del)"
+          disabled={selectedClipIds.length === 0}
+          onClick={() => {
+            for (const id of [...selectedClipIds]) removeClip(id);
+          }}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+          </svg>
+        </ToolButton>
         <ToolButton
           className={cx(activeTool === 'selection' && ToolButtonActive)}
           title="Selection Tool (V)"

@@ -39,9 +39,13 @@ export const ToolButton = styled.button`
   color: var(--text-secondary);
   transition: all 0.1s;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background: var(--bg-hover);
     color: var(--text-primary);
+  }
+
+  &:disabled {
+    opacity: 0.35;
   }
 
   & svg {
