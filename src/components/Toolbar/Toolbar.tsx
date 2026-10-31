@@ -25,7 +25,9 @@ interface ToolbarProps {
 }
 
 export default function Toolbar({ showProjectToggle = false, projectOpen = false, onToggleProject }: ToolbarProps) {
-  const { zoom, setZoom, exportStatus, activeTool, setActiveTool, selectedClipIds, removeClip } = useEditorStore();
+  const { zoom, setZoom, exportStatus, activeTool, setActiveTool, selectedClipIds, removeClip, undo, redo } = useEditorStore();
+  const canUndo = useEditorStore((s) => s.past.length > 0);
+  const canRedo = useEditorStore((s) => s.future.length > 0);
   const isExporting = exportStatus.phase === 'working';
 
   return (
@@ -52,6 +54,26 @@ export default function Toolbar({ showProjectToggle = false, projectOpen = false
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <polyline points="3 6 5 6 21 6" />
             <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+          </svg>
+        </ToolButton>
+        <ToolButton
+          title="Undo (Ctrl+Z)"
+          disabled={!canUndo}
+          onClick={() => undo()}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="9 14 4 9 9 4" />
+            <path d="M20 20v-7a4 4 0 00-4-4H4" />
+          </svg>
+        </ToolButton>
+        <ToolButton
+          title="Redo (Ctrl+Shift+Z)"
+          disabled={!canRedo}
+          onClick={() => redo()}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="15 14 20 9 15 4" />
+            <path d="M4 20v-7a4 4 0 014-4h12" />
           </svg>
         </ToolButton>
         <ToolButton

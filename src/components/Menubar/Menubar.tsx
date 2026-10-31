@@ -77,8 +77,16 @@ export default function Menubar() {
       {
         label: 'Edit',
         items: [
-          { label: 'Undo', shortcut: '⌘Z' },
-          { label: 'Redo', shortcut: '⌘⇧Z' },
+          {
+            label: 'Undo',
+            shortcut: '⌘Z',
+            action: () => useEditorStore.getState().undo(),
+          },
+          {
+            label: 'Redo',
+            shortcut: '⌘⇧Z',
+            action: () => useEditorStore.getState().redo(),
+          },
           { separator: true, label: '' },
           { label: 'Cut', shortcut: '⌘X' },
           { label: 'Copy', shortcut: '⌘C' },

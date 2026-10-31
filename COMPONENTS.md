@@ -56,6 +56,7 @@
 плейбэк (`setPlayback`, `togglePlay`, `stopPlayback`, `stepFrame`, `setCurrentFrame`),
 раскладка (`layout`/`setLayout` — `topHeight`, `monitorsSplit`, `timelineSplit`,
 `headersWidth`, `bottomLeft` (низ: проект слева, тулбар центр, таймлайн справа), сохраняется),
+история (`past`/`future`, `undo`/`redo` — кнопки в тулбаре, Ctrl+Z / Ctrl+Shift+Z),
 мобильная версия — только media queries ≤768px (десктоп не тронут): только Program
 (менюбар и Source скрыты), низ — проект / таймлайн / эффекты / тулбар в самом низу,
 панель проекта скрыта по дефолту, открывается иконкой папки в тулбаре,
@@ -70,5 +71,6 @@
 `persist.ts` (`loadSnapshot`, `saveNow`, `hydrateFromStorage`, `ensureHydrated`, `startPersisting` — localStorage),
 `time.ts` (`frameToTimecode`, `timecodeToFrame`, `formatDuration`, `generateColor`),
 `filmstrip.ts` (`getFilmstrip`, `stripForRange` — раскадровка клипов),
-`waveform.ts` (`getWaveform`, `peaksForRange` — waveform аудиоклипов).
+`waveform.ts` (`getWaveform`, `peaksForRange` — waveform аудиоклипов),
+`previewProxy.ts` (`ensureProxy` — 480p-прокси для игры на слабом железе).
 Типы: `src/types/index.ts` (`MediaItem`, `TimelineClip`, `Track`, `Effect`, `PlaybackState`, `ProjectState`).

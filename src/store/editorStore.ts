@@ -11,6 +11,13 @@ export interface ExportStatus {
 
 export type ToolId = 'selection' | 'razor';
 
+export interface HistoryEntry {
+  tracks: Track[];
+  /** Unix ms + source key; rapid trims with the same key collapse into one step. */
+  at: number;
+  key: string;
+}
+
 interface EditorState {
   project: ProjectState;
   mediaItems: MediaItem[];
@@ -27,6 +34,13 @@ interface EditorState {
   activePanels: string[];
   isSourcePanelOpen: boolean;
   currentTimecode: string;
+  /** Session-only proxy URLs (never persisted): mediaId -> object URL. */
+  proxyUrls: Record<string, string>;
+  setProxyUrl: (id: string, url: string) => void;
+  past: HistoryEntry[];
+  future: Track[][];
+  undo: () => void;
+  redo: () => void;
   layout: LayoutState;
   setLayout: (patch: Partial<LayoutState>) => void;
   hasHydrated: boolean;
@@ -89,6 +103,28 @@ interface EditorState {
 
 export const DEFAULT_TRACK_HEIGHT = 48;
 
+const MAX_HISTORY = 100;
+
+/**
+ * Snapshot the current tracks for undo. Rapid same-key updates (a trim drag
+ * firing per mousemove) collapse into a single step instead of dozens.
+ */
+function pushHistory(
+  state: EditorState,
+  coalesceKey?: string,
+  windowMs = 800,
+): Pick<EditorState, 'past' | 'future'> {
+  const now = Date.now();
+  const last = state.past[state.past.length - 1];
+  if (coalesceKey && last && last.key === coalesceKey && now - last.at < windowMs) {
+    return { past: state.past, future: [] };
+  }
+  return {
+    past: [...state.past.slice(-MAX_HISTORY + 1), { tracks: state.tracks, at: now, key: coalesceKey ?? `op:${now}` }],
+    future: [],
+  };
+}
+
 function makeDefaultTracks(): Track[] {
   const base = { muted: false, locked: false, clips: [] as Track['clips'] };
   return [
@@ -130,7 +166,10 @@ export const useEditorStore = create<EditorState>((set) => ({
   activePanels: ['project', 'source', 'program', 'effects'],
   isSourcePanelOpen: false,
   currentTimecode: '00:00:00:00',
+  proxyUrls: {},
   layout: { topHeight: 55, leftWidth: 35, monitorsSplit: 50, timelineSplit: 72, headersWidth: 120, bottomLeft: 20 },
+  past: [],
+  future: [],
   hasHydrated: false,
   importNonce: 0,
   exportStatus: { phase: 'idle', progress: 0, message: '' },
@@ -170,6 +209,8 @@ export const useEditorStore = create<EditorState>((set) => ({
         selectedClipId: null,
         selectedClipIds: [],
         selectedMediaId: null,
+        past: [],
+        future: [],
         playback: { ...state.playback, currentFrame: snap.currentFrame, fps: snap.project.fps },
         layout: l
           ? {
@@ -188,6 +229,9 @@ export const useEditorStore = create<EditorState>((set) => ({
     set((state) => ({ layout: { ...state.layout, ...patch } })),
 
   setHydrated: (v) => set({ hasHydrated: v }),
+
+  setProxyUrl: (id, url) =>
+    set((state) => ({ proxyUrls: { ...state.proxyUrls, [id]: url } })),
 
   setProjectName: (name) =>
     set((state) => ({ project: { ...state.project, name } })),
@@ -221,6 +265,8 @@ export const useEditorStore = create<EditorState>((set) => ({
       selectedClipId: null,
       selectedClipIds: [],
       selectedMediaId: null,
+      past: [],
+      future: [],
     })),
 
   removeMediaItem: (id) => {
@@ -235,6 +281,7 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   addClipToTrack: (clip) =>
     set((state) => ({
+      ...pushHistory(state),
       tracks: state.tracks.map((track) =>
         track.index === clip.trackIndex
           ? { ...track, clips: [...track.clips, { ...clip, id: uuidv4() }] }
@@ -247,6 +294,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       const videoId = uuidv4();
       const audioId = uuidv4();
       return {
+        ...pushHistory(state),
         tracks: state.tracks.map((track) => {
           const addV = track.index === video.trackIndex
             ? [{ ...video, id: videoId, linkedClipId: audioId }]
@@ -278,6 +326,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       }
       const selectedClipIds = state.selectedClipIds.filter((id) => !doomed.has(id));
       return {
+        ...pushHistory(state),
         tracks: state.tracks.map((track) => ({
           ...track,
           clips: track.clips.filter((c) => !doomed.has(c.id)),
@@ -350,6 +399,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         replacements.set(partner.id, [{ ...partner, linkedClipId: undefined }]);
       }
       return {
+        ...pushHistory(state),
         tracks: state.tracks.map((track) => ({
           ...track,
           clips: track.clips.flatMap((c) => replacements.get(c.id) ?? [c]),
@@ -374,6 +424,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       }));
       if (!movedClip) return state;
       return {
+        ...pushHistory(state),
         tracks: clearedTracks.map((track) =>
           track.index === newTrackIndex
             ? { ...track, clips: [...track.clips, { ...movedClip!, startFrame: newStartFrame, trackIndex: newTrackIndex }] }
@@ -413,7 +464,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         m.trackIndex = target.index;
         target.clips.push(m);
       }
-      return { tracks: remaining };
+      return { ...pushHistory(state), tracks: remaining };
     }),
 
   trimClip: (clipId, side, deltaFrames) =>
@@ -434,18 +485,53 @@ export const useEditorStore = create<EditorState>((set) => ({
         if (newDuration < 5) return clip;
         return { ...clip, durationInFrames: newDuration, outPoint: clip.outPoint + deltaFrames };
       };
+      let changed = false;
+      const tracks = state.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) => {
+          if (clip.id !== clipId && !withPartner.has(clip.id)) return clip;
+          const next = trimOne(clip);
+          if (next !== clip) changed = true;
+          return next;
+        }),
+      }));
+      // Clamped no-op: don't record an undo step.
+      if (!changed) return state;
       return {
-        tracks: state.tracks.map((track) => ({
-          ...track,
-          clips: track.clips.map((clip) =>
-            clip.id === clipId || withPartner.has(clip.id) ? trimOne(clip) : clip,
-          ),
-        })),
+        ...pushHistory(state, `trim:${clipId}:${side}`),
+        tracks,
+      };
+    }),
+
+  undo: () =>
+    set((state) => {
+      const prev = state.past[state.past.length - 1];
+      if (!prev) return state;
+      return {
+        tracks: prev.tracks,
+        past: state.past.slice(0, -1),
+        future: [state.tracks, ...state.future].slice(0, MAX_HISTORY),
+        selectedClipId: null,
+        selectedClipIds: [],
+      };
+    }),
+
+  redo: () =>
+    set((state) => {
+      const next = state.future[0];
+      if (!next) return state;
+      return {
+        tracks: next,
+        past: [...state.past.slice(-MAX_HISTORY + 1), { tracks: state.tracks, at: Date.now(), key: `redo:${Date.now()}` }],
+        future: state.future.slice(1),
+        selectedClipId: null,
+        selectedClipIds: [],
       };
     }),
 
   updateClipEffect: (clipId, effect) =>
     set((state) => ({
+      ...pushHistory(state),
       tracks: state.tracks.map((track) => ({
         ...track,
         clips: track.clips.map((clip) =>
@@ -463,6 +549,7 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   addEffectToClip: (clipId, effect) =>
     set((state) => ({
+      ...pushHistory(state),
       tracks: state.tracks.map((track) => ({
         ...track,
         clips: track.clips.map((clip) =>
@@ -475,6 +562,7 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   removeEffectFromClip: (clipId, effectId) =>
     set((state) => ({
+      ...pushHistory(state),
       tracks: state.tracks.map((track) => ({
         ...track,
         clips: track.clips.map((clip) =>
@@ -508,6 +596,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       if (type === 'video') {
         const audioCount = state.tracks.filter((t) => t.type === 'audio').length;
         return {
+          ...pushHistory(state),
           tracks: [
             ...state.tracks,
             makeTrack('video', trackNum),
@@ -515,17 +604,19 @@ export const useEditorStore = create<EditorState>((set) => ({
           ],
         };
       }
-      return { tracks: [...state.tracks, makeTrack('audio', trackNum)] };
+      return { ...pushHistory(state), tracks: [...state.tracks, makeTrack('audio', trackNum)] };
     }),
 
   removeTrack: (trackIndex) =>
     set((state) => ({
+      ...pushHistory(state),
       // No reindexing: remaining tracks and their clips keep stable indices.
       tracks: state.tracks.filter((t) => t.index !== trackIndex),
     })),
 
   setTrackHeight: (trackIndex, height) =>
     set((state) => ({
+      ...pushHistory(state),
       tracks: state.tracks.map((t) =>
         t.index === trackIndex ? { ...t, height } : t,
       ),
@@ -533,6 +624,7 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   toggleMuteTrack: (trackIndex) =>
     set((state) => ({
+      ...pushHistory(state),
       tracks: state.tracks.map((t) =>
         t.index === trackIndex ? { ...t, muted: !t.muted } : t
       ),
@@ -540,6 +632,7 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   toggleLockTrack: (trackIndex) =>
     set((state) => ({
+      ...pushHistory(state),
       tracks: state.tracks.map((t) =>
         t.index === trackIndex ? { ...t, locked: !t.locked } : t
       ),
@@ -547,6 +640,7 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   toggleVisibilityTrack: (trackIndex) =>
     set((state) => ({
+      ...pushHistory(state),
       tracks: state.tracks.map((t) =>
         t.index === trackIndex ? { ...t, visible: !t.visible } : t
       ),
@@ -554,6 +648,7 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   renameTrack: (trackIndex, name) =>
     set((state) => ({
+      ...pushHistory(state),
       tracks: state.tracks.map((t) =>
         t.index === trackIndex ? { ...t, name } : t
       ),
@@ -604,6 +699,7 @@ export const useEditorStore = create<EditorState>((set) => ({
             startFrame: clip.startFrame + clip.durationInFrames + 5,
           };
           return {
+            ...pushHistory(state),
             tracks: state.tracks.map((t) =>
               t.index === track.index
                 ? { ...t, clips: [...t.clips, newClip] }

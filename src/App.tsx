@@ -107,6 +107,19 @@ export default function App() {
       return;
     }
 
+    if ((e.metaKey || e.ctrlKey) && e.code === 'KeyZ') {
+      e.preventDefault();
+      if (e.shiftKey) useEditorStore.getState().redo();
+      else useEditorStore.getState().undo();
+      return;
+    }
+
+    if ((e.metaKey || e.ctrlKey) && e.code === 'KeyY') {
+      e.preventDefault();
+      useEditorStore.getState().redo();
+      return;
+    }
+
     switch (e.code) {
       case 'Space':
         e.preventDefault();
