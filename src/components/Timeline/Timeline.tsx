@@ -536,16 +536,38 @@ export default function Timeline() {
     const track = tracks.find((t) => t.index === targetTrackIndex);
     if (!track || track.locked) return;
 
+    // Media must land on a matching track: an MP3 dropped over a video
+    // row belongs on an audio track (and vice versa). Premiere-style:
+    // redirect to the first unlocked compatible track, creating one
+    // when the project has none, instead of stranding the clip.
+    const wantAudioTrack = media.type === 'audio';
+    let dropTrack: typeof track | null = track;
+    if ((wantAudioTrack && track.type !== 'audio') || (!wantAudioTrack && track.type !== 'video')) {
+      const needType = wantAudioTrack ? 'audio' : 'video';
+      const st = useEditorStore.getState();
+      dropTrack = st.tracks.find((t) => !t.locked && t.type === needType) ?? null;
+      if (!dropTrack) {
+        // All matching tracks are locked (or none exist) — add a fresh one.
+        addTrack(needType);
+        const after = useEditorStore.getState().tracks.filter((t) => t.type === needType && !t.locked);
+        dropTrack = after.sort((a, b) => b.index - a.index)[0] ?? null;
+      }
+      if (!dropTrack) return;
+    }
+    // Snapshot for the async pair-drop below (narrowing a `let` does not
+    // survive closure capture).
+    const landingTrack = dropTrack;
+
     const trackContent = (e.currentTarget as HTMLElement).querySelector(`.${trackContentClassName}`) as HTMLElement | null;
     const frame = getFrameFromX(e.clientX, trackContent);
     const durationFrames = Math.round(media.duration * playback.fps);
 
     // Premiere-style: a video with sound lands as a linked pair —
     // picture on the video track, sound on the audio track below.
-    if (media.type === 'video' && track.type === 'video') {
+    if (media.type === 'video' && landingTrack.type === 'video') {
       const videoClip = {
         mediaId: media.id,
-        trackIndex: track.index,
+        trackIndex: landingTrack.index,
         startFrame: frame,
         durationInFrames: durationFrames,
         inPoint: 0,
@@ -572,7 +594,7 @@ export default function Timeline() {
         }
         if (hasAudio) {
           // Numbered mate (V2 -> A2), else first unlocked audio track.
-          const audioTrack = findLinkedAudioTrack(useEditorStore.getState().tracks, track);
+          const audioTrack = findLinkedAudioTrack(useEditorStore.getState().tracks, landingTrack);
           if (audioTrack) {
             useEditorStore.getState().addClipPair(videoClip, { ...videoClip, trackIndex: audioTrack.index });
             setDragMediaId(null);
@@ -588,7 +610,7 @@ export default function Timeline() {
 
     addClipToTrack({
       mediaId: media.id,
-      trackIndex: track.index,
+      trackIndex: landingTrack.index,
       startFrame: frame,
       durationInFrames: durationFrames,
       inPoint: 0,
@@ -599,7 +621,7 @@ export default function Timeline() {
     });
 
     setDragMediaId(null);
-  }, [mediaLookup, tracks, playback.fps, addClipToTrack, moveClips, setDragMediaId, getFrameFromX]);
+  }, [mediaLookup, tracks, playback.fps, addClipToTrack, addTrack, moveClips, setDragMediaId, getFrameFromX]);
 
   return (
     <Panel>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cx } from '@linaria/core';
 import { useEditorStore } from '../../store/editorStore';
+import type { MediaItem, TimelineClip } from '../../types';
 import { frameToTimecode } from '../../utils/time';
 import {
   Panel,
@@ -27,6 +28,7 @@ import {
 
 export default function ProgramMonitor() {
   const { playback, togglePlay, stopPlayback, stepFrame, setCurrentFrame, project, tracks, mediaItems } = useEditorStore();
+  const proxyUrls = useEditorStore((s) => s.proxyUrls);
   const scrubberRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [audioBlocked, setAudioBlocked] = useState(false);
@@ -76,6 +78,11 @@ export default function ProgramMonitor() {
       )
     : 0;
 
+  // Lightweight 480p proxy when ready (same duration — timeline math
+  // unchanged), original file otherwise.
+  const proxyUrl = activeVideo ? proxyUrls[activeVideo.media.id] : undefined;
+  const playbackSrc = activeVideo?.media.url ? (proxyUrl ?? activeVideo.media.url) : undefined;
+
   // Seek the video element while paused (step, scrub, clip change).
   // While playing the element is left alone: repeated currentTime writes
   // stall the audio track on mobile browsers.
@@ -86,7 +93,7 @@ export default function ProgramMonitor() {
     if (!Number.isFinite(sourceOffset)) return;
     if (video.readyState < 1) return;
     try { video.currentTime = sourceOffset; } catch { /* seek while loading */ }
-  }, [playback.currentFrame, playback.isPlaying, activeVideo, sourceOffset]);
+  }, [playback.currentFrame, playback.isPlaying, activeVideo, sourceOffset, proxyUrl]);
 
   // While playing, resync only after a huge jump (e.g. tab switch).
   useEffect(() => {
@@ -97,7 +104,7 @@ export default function ProgramMonitor() {
     if (Math.abs(video.currentTime - sourceOffset) > 2) {
       try { video.currentTime = sourceOffset; } catch { /* ignore */ }
     }
-  }, [playback.currentFrame, playback.isPlaying, activeVideo, sourceOffset]);
+  }, [playback.currentFrame, playback.isPlaying, activeVideo, sourceOffset, proxyUrl]);
 
   // Space (or the transport button) toggles real video playback.
   // wasPlayingRef aligns the frame once on (re)start, then hands off.
@@ -123,12 +130,83 @@ export default function ProgramMonitor() {
       wasPlayingRef.current = false;
       video.pause();
     }
-  }, [playback.isPlaying, activeVideo, sourceOffset]);
+  }, [playback.isPlaying, activeVideo, sourceOffset, proxyUrl]);
 
   useEffect(() => {
     const video = videoRef.current;
     if (video) video.playbackRate = 1;
   }, [activeVideo?.media.id]);
+
+  // ---- Timeline audio (MP3 clips on A1/A2/..., linked audio mates) ----
+  // The <video> element above carries embedded sound only for its own
+  // picture. Standalone audio clips need their own elements, otherwise
+  // an MP3 on an audio track is visible but silent.
+  const activeVideoClipId = activeVideo?.clip.id ?? null;
+  const activeAudios = useMemo(() => {
+    const list: { clip: TimelineClip; media: MediaItem; offset: number }[] = [];
+    for (const track of tracks) {
+      if (track.type !== 'audio' || track.muted) continue;
+      for (const clip of track.clips) {
+        if (playback.currentFrame < clip.startFrame || playback.currentFrame >= clip.startFrame + clip.durationInFrames) continue;
+        // A linked mate duplicates its video's embedded sound while that
+        // video is on screen — play the mate only when its video is away,
+        // so the pair never doubles up.
+        if (clip.linkedClipId && clip.linkedClipId === activeVideoClipId) continue;
+        const media = mediaLookup.get(clip.mediaId);
+        if (!media?.url) continue;
+        list.push({
+          clip,
+          media,
+          offset: Math.max(0, (playback.currentFrame - clip.startFrame + clip.inPoint) / playback.fps),
+        });
+      }
+    }
+    return list;
+  }, [tracks, playback.currentFrame, playback.fps, mediaLookup, activeVideoClipId]);
+
+  const audioRefs = useRef(new Map<string, HTMLAudioElement>());
+  useEffect(() => {
+    const live = new Set<string>();
+    for (const a of activeAudios) {
+      live.add(a.clip.id);
+      const el = audioRefs.current.get(a.clip.id);
+      if (!el) continue;
+      if (Math.abs(el.currentTime - a.offset) > 0.3) {
+        try {
+          el.currentTime = a.offset;
+        } catch {
+          // Not seekable yet — the next tick retries.
+        }
+      }
+      const dbGain = Math.pow(10, (a.clip.volume || 0) / 20);
+      try {
+        el.volume = Math.min(1, Math.max(0, playback.volume * dbGain));
+      } catch {
+        // Out-of-range volume on some engines — keep the previous level.
+      }
+      el.muted = playback.volume === 0 || audioBlocked;
+      el.playbackRate = 1;
+      if (playback.isPlaying) {
+        const attempt = el.play();
+        if (attempt) {
+          attempt.catch(() => {
+            // Same autoplay policy as video: fall back to muted playback.
+            setAudioBlocked(true);
+            el.muted = true;
+            el.play().catch(() => undefined);
+          });
+        }
+      } else {
+        el.pause();
+      }
+    }
+    for (const [id, el] of audioRefs.current) {
+      if (!live.has(id)) {
+        el.pause();
+        audioRefs.current.delete(id);
+      }
+    }
+  }, [playback.isPlaying, playback.volume, audioBlocked, activeAudios]);
 
   return (
     <Panel>
@@ -152,21 +230,34 @@ export default function ProgramMonitor() {
         </PanelActions>
       </PanelHeader>
 
+      {activeAudios.map((a) => (
+        <audio
+          key={a.clip.id}
+          ref={(el) => {
+            if (el) audioRefs.current.set(a.clip.id, el);
+            else audioRefs.current.delete(a.clip.id);
+          }}
+          src={a.media.url}
+          preload="auto"
+          style={{ display: 'none' }}
+        />
+      ))}
+
       <PreviewArea>
         <PreviewCanvas>
           <TimecodeOverlay>
             {frameToTimecode(playback.currentFrame, playback.fps)}
           </TimecodeOverlay>
           <ResolutionInfo>
-            {project.width} × {project.height}
+            {proxyUrl ? 'PROXY · ' : ''}{project.width} × {project.height}
           </ResolutionInfo>
           {totalClips === 0 ? (
             <EmptyPreview>Drop clips on the timeline to preview</EmptyPreview>
           ) : activeVideo && activeVideo.media.type === 'video' ? (
             <video
-              key={activeVideo.media.id}
+              key={playbackSrc}
               ref={videoRef}
-              src={activeVideo.media.url}
+              src={playbackSrc}
               style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
               muted={playback.volume === 0 || audioBlocked}
               playsInline
