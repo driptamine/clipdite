@@ -52,6 +52,8 @@ export interface Effect {
 export interface PlaybackState {
   isPlaying: boolean;
   currentFrame: number;
+  /** Frame the last playback run started from; Space/#2 rewinds here (session-only, not persisted). */
+  playOriginFrame: number;
   fps: number;
   durationInFrames: number;
   loop: boolean;

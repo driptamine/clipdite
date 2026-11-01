@@ -150,6 +150,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   playback: {
     isPlaying: false,
     currentFrame: 0,
+    playOriginFrame: 0,
     fps: 30,
     durationInFrames: 30 * 60 * 5,
     loop: false,
@@ -257,6 +258,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       playback: {
         isPlaying: false,
         currentFrame: 0,
+        playOriginFrame: 0,
         fps: 30,
         durationInFrames: 30 * 60 * 5,
         loop: false,
@@ -659,14 +661,35 @@ export const useEditorStore = create<EditorState>((set) => ({
       playback: { ...state.playback, ...update },
     })),
 
+  // Preview semantics: the run's start frame is remembered, and toggling
+  // playback off rewinds the playhead to it instead of pausing in place.
   togglePlay: () =>
-    set((state) => ({
-      playback: { ...state.playback, isPlaying: !state.playback.isPlaying },
-    })),
+    set((state) => {
+      if (state.playback.isPlaying) {
+        const origin = Math.min(
+          state.playback.playOriginFrame,
+          state.playback.durationInFrames,
+        );
+        return {
+          playback: {
+            ...state.playback,
+            isPlaying: false,
+            currentFrame: Math.max(0, origin),
+          },
+        };
+      }
+      return {
+        playback: {
+          ...state.playback,
+          isPlaying: true,
+          playOriginFrame: state.playback.currentFrame,
+        },
+      };
+    }),
 
   stopPlayback: () =>
     set((state) => ({
-      playback: { ...state.playback, isPlaying: false, currentFrame: 0 },
+      playback: { ...state.playback, isPlaying: false, currentFrame: 0, playOriginFrame: 0 },
     })),
 
   stepFrame: (direction) =>
