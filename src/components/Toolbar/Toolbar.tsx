@@ -22,9 +22,11 @@ interface ToolbarProps {
   showProjectToggle?: boolean;
   projectOpen?: boolean;
   onToggleProject?: () => void;
+  /** Mobile-only: +/- timeline zoom buttons; desktop zooms via trackpad pinch. */
+  showZoomControls?: boolean;
 }
 
-export default function Toolbar({ showProjectToggle = false, projectOpen = false, onToggleProject }: ToolbarProps) {
+export default function Toolbar({ showProjectToggle = false, projectOpen = false, onToggleProject, showZoomControls = false }: ToolbarProps) {
   const { zoom, setZoom, exportStatus, activeTool, setActiveTool, selectedClipIds, removeClip, undo, redo } = useEditorStore();
   const canUndo = useEditorStore((s) => s.past.length > 0);
   const canRedo = useEditorStore((s) => s.future.length > 0);
@@ -155,11 +157,13 @@ export default function Toolbar({ showProjectToggle = false, projectOpen = false
         </svg>
       </ExportButton>
 
-      <ZoomControls className={ZoomControlsMobile}>
-        <ZoomButton onClick={() => setZoom(zoom - 0.25)} title="Zoom Out">−</ZoomButton>
-        <ZoomLevel>{Math.round(zoom * 100)}%</ZoomLevel>
-        <ZoomButton onClick={() => setZoom(zoom + 0.25)} title="Zoom In">+</ZoomButton>
-      </ZoomControls>
+      {showZoomControls && (
+        <ZoomControls className={ZoomControlsMobile}>
+          <ZoomButton onClick={() => setZoom(zoom - 0.25)} title="Zoom Out">−</ZoomButton>
+          <ZoomLevel>{Math.round(zoom * 100)}%</ZoomLevel>
+          <ZoomButton onClick={() => setZoom(zoom + 0.25)} title="Zoom In">+</ZoomButton>
+        </ZoomControls>
+      )}
     </ToolbarRoot>
   );
 }

@@ -97,6 +97,49 @@ export default function App() {
     return () => stop();
   }, []);
 
+  // Desktop: a MacBook trackpad pinch arrives as ctrl+wheel (Safari also
+  // sends native gesture* events). A passive listener cannot stop it, and
+  // React mounts wheel handling passively — so intercept on the window:
+  // pinch never zooms the page, and over the timeline it maps to the
+  // timeline zoom instead. Everywhere else it is swallowed.
+  useEffect(() => {
+    const timelineOf = (target: EventTarget | null): Element | null =>
+      target instanceof Element ? target.closest('[data-timeline-panel]') : null;
+
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      if (timelineOf(e.target)) {
+        const st = useEditorStore.getState();
+        st.setZoom(st.zoom + (e.deltaY > 0 ? -0.1 : 0.1));
+      }
+    };
+
+    // Safari on macOS: the pinch arrives as native gesture events instead
+    // of ctrl+wheel; the driving scale starts at 1 when the gesture begins.
+    let gestureStartZoom = 1;
+    const gestureScale = (e: Event) => (e as unknown as { scale?: number }).scale ?? 1;
+    const onGestureStart = (e: Event) => {
+      e.preventDefault();
+      gestureStartZoom = useEditorStore.getState().zoom;
+    };
+    const onGestureChange = (e: Event) => {
+      e.preventDefault();
+      if (!timelineOf(e.target)) return;
+      const scale = gestureScale(e);
+      if (scale > 0) useEditorStore.getState().setZoom(gestureStartZoom * scale);
+    };
+
+    window.addEventListener('wheel', onWheel, { passive: false });
+    document.addEventListener('gesturestart', onGestureStart);
+    document.addEventListener('gesturechange', onGestureChange);
+    return () => {
+      window.removeEventListener('wheel', onWheel);
+      document.removeEventListener('gesturestart', onGestureStart);
+      document.removeEventListener('gesturechange', onGestureChange);
+    };
+  }, []);
+
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
@@ -255,6 +298,7 @@ export default function App() {
           )}
           <Toolbar
             showProjectToggle={isMobile}
+            showZoomControls={isMobile}
             projectOpen={mobileProjectOpen}
             onToggleProject={() => setMobileProjectOpen((v) => !v)}
           />

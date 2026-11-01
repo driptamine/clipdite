@@ -77,7 +77,7 @@ export default function Timeline() {
     activeTool, splitClip, selectClips, moveClips,
     setCurrentFrame, selectClip,
     toggleMuteTrack, toggleLockTrack, toggleVisibilityTrack,
-    addTrack, setZoom, addClipToTrack, setDragMediaId, setTrackHeight, trimClip,
+    addTrack, addClipToTrack, setDragMediaId, setTrackHeight, trimClip,
   } = useEditorStore();
 
   const tracksAreaRef = useRef<HTMLDivElement>(null);
@@ -449,14 +449,6 @@ export default function Timeline() {
     setHoverLeftPx(null);
   }, []);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      setZoom(zoom + delta);
-    }
-  }, [zoom, setZoom]);
-
   const handleClipClick = useCallback((e: React.MouseEvent, clipId: string) => {
     e.stopPropagation();
     if (marqueeDrawnRef.current) {
@@ -768,7 +760,7 @@ export default function Timeline() {
   }, [mediaLookup, tracks, playback.fps, addClipToTrack, addTrack, moveClips, setDragMediaId, getFrameFromX, snapDeltaFor, clearDragVisuals]);
 
   return (
-    <Panel>
+    <Panel data-timeline-panel>
       <PanelHeader>
         <PanelTitle>Timeline</PanelTitle>
         <PanelActions>
@@ -896,7 +888,6 @@ export default function Timeline() {
           <TracksArea
             ref={tracksAreaRef}
             onClick={handleTimelineClick}
-            onWheel={handleWheel}
             onScroll={handleTracksScroll}
             onMouseMove={handleHoverMove}
             onMouseLeave={handleHoverLeave}
