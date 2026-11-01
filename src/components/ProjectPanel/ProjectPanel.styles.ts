@@ -68,6 +68,7 @@ export const MediaGrid = styled.div`
 `;
 
 export const MediaItem = styled.div`
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -85,6 +86,38 @@ export const MediaItem = styled.div`
     background: var(--bg-hover);
   }
 `;
+
+// Revealed on hover; removing an item also strips its timeline clips.
+export const MediaItemDelete = styled.button`
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+  z-index: 2;
+
+  & svg {
+    width: 11px;
+    height: 11px;
+  }
+
+  ${MediaItem}:hover & {
+    opacity: 1;
+  }
+
+  &:hover {
+    background: rgba(229, 62, 62, 0.2);
+    color: var(--bg-playhead);
+  }
+`;
+
 
 export const MediaItemSelected = css`
   background: var(--bg-selection);

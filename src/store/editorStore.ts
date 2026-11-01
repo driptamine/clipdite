@@ -272,11 +272,34 @@ export const useEditorStore = create<EditorState>((set) => ({
     })),
 
   removeMediaItem: (id) => {
+    // Original file and its transcode live in the same store; `proxy:<id>`
+    // is the preview proxy (see previewProxy.ts).
     deleteFileBlob(id).catch(() => undefined);
-    return set((state) => ({
-      mediaItems: state.mediaItems.filter((m) => m.id !== id),
-      selectedMediaId: state.selectedMediaId === id ? null : state.selectedMediaId,
-    }));
+    deleteFileBlob(`proxy:${id}`).catch(() => undefined);
+    return set((state) => {
+      const clipsLeft = new Set<string>();
+      for (const track of state.tracks) {
+        for (const clip of track.clips) {
+          if (clip.mediaId !== id) clipsLeft.add(clip.id);
+        }
+      }
+      const { [id]: _removedProxy, ...proxyUrls } = state.proxyUrls;
+      return {
+        // Undo restores the library entry's timeline clips (the media item
+        // itself stays gone; re-import is the recovery path).
+        ...pushHistory(state),
+        mediaItems: state.mediaItems.filter((m) => m.id !== id),
+        proxyUrls,
+        selectedMediaId: state.selectedMediaId === id ? null : state.selectedMediaId,
+        // Linked pairs share one mediaId, so video + audio mate go together.
+        tracks: state.tracks.map((track) =>
+          track.clips.some((c) => c.mediaId === id)
+            ? { ...track, clips: track.clips.filter((c) => c.mediaId !== id) }
+            : track
+        ),
+        selectedClipIds: state.selectedClipIds.filter((cid) => clipsLeft.has(cid)),
+      };
+    });
   },
 
   selectMediaItem: (id) => set({ selectedMediaId: id }),

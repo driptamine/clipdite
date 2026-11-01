@@ -16,6 +16,7 @@ import {
   MediaGrid,
   MediaItem,
   MediaItemSelected,
+  MediaItemDelete,
   MediaThumbnail,
   MediaIcon,
   MediaName,
@@ -27,8 +28,23 @@ import {
 } from './ProjectPanel.styles';
 
 export default function ProjectPanel() {
-  const { mediaItems, selectedMediaId, selectMediaItem, importMediaItem, setDragMediaId, importNonce } = useEditorStore();
+  const { mediaItems, selectedMediaId, selectMediaItem, removeMediaItem, importMediaItem, setDragMediaId, importNonce } = useEditorStore();
+  const tracks = useEditorStore((s) => s.tracks);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Deleting a library item also strips its clips (and linked pairs) from
+  // the timeline — the tooltip says how many will go.
+  const handleDeleteMediaItem = useCallback((e: React.MouseEvent, itemId: string) => {
+    // Not a selection click: the item's own handlers must not fire.
+    e.stopPropagation();
+    removeMediaItem(itemId);
+  }, [removeMediaItem]);
+
+  const clipUsageOf = useCallback(
+    (mediaId: string) =>
+      tracks.reduce((n, t) => n + t.clips.filter((c) => c.mediaId === mediaId).length, 0),
+    [tracks],
+  );
 
   // File > Import Media (menubar) opens this panel's file dialog.
   useEffect(() => {
@@ -163,7 +179,9 @@ export default function ProjectPanel() {
           onDragOver={handleDragOver}
         >
           <MediaGrid>
-            {mediaItems.map((item) => (
+            {mediaItems.map((item) => {
+              const clipUsageCount = clipUsageOf(item.id);
+              return (
               <MediaItem
                 key={item.id}
                 className={cx(selectedMediaId === item.id && MediaItemSelected)}
@@ -190,10 +208,21 @@ export default function ProjectPanel() {
                     </MediaIcon>
                   )}
                 </MediaThumbnail>
+                <MediaItemDelete
+                  title={clipUsageCount > 0
+                    ? `Remove from project (${clipUsageCount} ${clipUsageCount === 1 ? 'clip goes' : 'clips go'} from the timeline)`
+                    : 'Remove from project'}
+                  onClick={(e) => handleDeleteMediaItem(e, item.id)}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                    <path d="M5 5l14 14M19 5L5 19" />
+                  </svg>
+                </MediaItemDelete>
                 <MediaName>{item.name}</MediaName>
                 <MediaDuration>{formatDuration(item.duration)}</MediaDuration>
               </MediaItem>
-            ))}
+              );
+            })}
           </MediaGrid>
         </PanelContent>
       )}
