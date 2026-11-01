@@ -1,6 +1,7 @@
 import { useEditorStore } from '../store/editorStore';
 import type { MediaItem, ProjectState, Track, LayoutState } from '../types';
 import { loadFileBlob } from './mediaStorage';
+import { ensureProxy } from './previewProxy';
 
 const STORAGE_KEY = 'clipdite:v1';
 
@@ -86,6 +87,9 @@ export async function hydrateFromStorage(): Promise<boolean> {
       } catch {
         // Missing blob: item stays without a playable URL.
       }
+      // Prime playback proxies for the restored library (background,
+      // sequential, skipped automatically when already stored).
+      if (m.type === 'video') ensureProxy(m.id).catch(() => undefined);
     }),
   );
   setHydrated(true);

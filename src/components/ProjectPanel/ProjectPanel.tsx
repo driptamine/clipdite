@@ -5,6 +5,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { formatDuration } from '../../utils/time';
 import { probeMediaFile } from '../../utils/mediaProbe';
 import { saveFileBlob } from '../../utils/mediaStorage';
+import { ensureProxy } from '../../utils/previewProxy';
 import {
   Panel,
   PanelHeader,
@@ -48,6 +49,9 @@ export default function ProjectPanel() {
       // Keep the original bytes in IndexedDB so the media (and every
       // timeline edit that references it) survives a page reload.
       saveFileBlob(id, file).catch(() => undefined);
+      // Build a lightweight playback proxy in the background (smooth
+      // preview on weak phones); failure just keeps the original.
+      if (isVideo) ensureProxy(id).catch(() => undefined);
 
       if (isImage) {
         importMediaItem({
