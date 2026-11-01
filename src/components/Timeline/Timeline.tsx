@@ -57,6 +57,8 @@ import {
   ClipDropGhost,
   DropIndicatorLine,
   ClipIcon,
+  PanelActionBtnActive,
+  SnapGuide,
 } from './Timeline.styles';
 
 interface DropIndicator {
@@ -173,6 +175,60 @@ export default function Timeline() {
     const x = clientX - rect.left;
     return Math.max(0, Math.round(x * framesPerPixel));
   }, [framesPerPixel]);
+
+  // ---- Edge snapping ("magnet") ------------------------------------------
+  // Moving/trimming visuals magnetise to every clip edge, the playhead and
+  // the timeline start. Toggleable from the header button; holding Shift
+  // bypasses it for a single drag.
+  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [snapGuideFrame, setSnapGuideFrame] = useState<number | null>(null);
+  const SNAP_THRESHOLD_PX = 8;
+
+  // In-flight HTML5 drag of timeline clips. dataTransfer is unreadable
+  // during dragover, so the payload is mirrored here to drive preview.
+  const moveDragRef = useRef<{ ids: string[]; draggedId: string; grabOffset: number } | null>(null);
+  const clearDragVisuals = useCallback(() => {
+    setDropIndicator(null);
+    setHoveredTrackIndex(null);
+    setSnapGuideFrame(null);
+  }, []);
+
+  const snapFramesFor = useCallback((excludeClipIds?: readonly string[]): number[] => {
+    const st = useEditorStore.getState();
+    const excluded = excludeClipIds ? new Set(excludeClipIds) : null;
+    const points = new Set<number>([0, st.playback.currentFrame]);
+    for (const track of st.tracks) {
+      if (track.locked) continue;
+      for (const clip of track.clips) {
+        if (excluded?.has(clip.id)) continue;
+        points.add(clip.startFrame);
+        points.add(clip.startFrame + clip.durationInFrames);
+      }
+    }
+    return [...points];
+  }, []);
+
+  const snapDeltaFor = useCallback((edges: number[], excludeClipIds?: readonly string[]): { delta: number; frame: number } | null => {
+    const threshold = Math.max(1, SNAP_THRESHOLD_PX * framesPerPixel);
+    const points = snapFramesFor(excludeClipIds);
+    let best: { delta: number; frame: number } | null = null;
+    for (const edge of edges) {
+      for (const point of points) {
+        const delta = point - edge;
+        if (Math.abs(delta) <= threshold && (!best || Math.abs(delta) < Math.abs(best.delta))) {
+          best = { delta, frame: point };
+        }
+      }
+    }
+    return best;
+  }, [framesPerPixel, snapFramesFor]);
+
+  // Fixed current just for trim callbacks (their deps never re-create the
+  // listener while a trim drag is in progress).
+  const snapEnabledRef = useRef(snapEnabled);
+  useEffect(() => {
+    snapEnabledRef.current = snapEnabled;
+  }, [snapEnabled]);
 
   // Clicking (or tapping) anywhere on the timeline — empty track space,
   // a clip, or the time ruler — moves the playhead there.
@@ -331,20 +387,39 @@ export default function Timeline() {
   }, [setTrackHeight]);
 
   // Drag a clip's left/right edge to trim it (delta applied incrementally).
+  // Trim edges snap to other clip edges / the playhead while the magnet
+  // toggle is on (hold Shift to bypass for one drag).
   const startClipTrim = useCallback((e: React.PointerEvent, clipId: string, side: 'in' | 'out') => {
     if (useEditorStore.getState().activeTool !== 'selection') return;
     e.preventDefault();
     e.stopPropagation();
     trimmingRef.current = true;
     const startX = e.clientX;
+    const dragged = useEditorStore.getState().tracks.flatMap((t) => t.clips).find((c) => c.id === clipId);
+    const originalEdge = dragged
+      ? (side === 'in' ? dragged.startFrame : dragged.startFrame + dragged.durationInFrames)
+      : 0;
     let applied = 0;
-    const handleMove = (moveE: MouseEvent) => {
-      const total = Math.round((moveE.clientX - startX) * framesPerPixel);
+    let guideAt: number | null = null;
+    const setTrimTotal = (total: number, guideFrame: number | null) => {
+      guideAt = guideFrame;
       const diff = total - applied;
-      if (diff !== 0) {
-        applied = total;
-        trimClip(clipId, side, diff);
+      if (diff === 0) return;
+      applied = total;
+      trimClip(clipId, side, diff);
+      setSnapGuideFrame(guideFrame);
+    };
+    const handleMove = (moveE: MouseEvent) => {
+      const raw = originalEdge + Math.round((moveE.clientX - startX) * framesPerPixel);
+      if (snapEnabledRef.current && !moveE.shiftKey) {
+        const snapped = snapDeltaFor([raw], [clipId]);
+        if (snapped && snapped.delta !== 0) {
+          setTrimTotal(raw + snapped.delta, snapped.frame);
+          return;
+        }
       }
+      // Unsnapped: the guide still follows the trimming edge.
+      setTrimTotal(raw, Math.max(0, raw));
     };
     const handleUp = () => {
       document.removeEventListener('pointermove', handleMove);
@@ -352,11 +427,12 @@ export default function Timeline() {
       document.removeEventListener('pointercancel', handleUp);
       trimmingRef.current = false;
       suppressSeekRef.current = true;
+      if (guideAt !== null) setSnapGuideFrame(null);
     };
     document.addEventListener('pointermove', handleMove);
     document.addEventListener('pointerup', handleUp);
     document.addEventListener('pointercancel', handleUp);
-  }, [framesPerPixel, trimClip]);
+  }, [framesPerPixel, trimClip, snapDeltaFor]);
 
   // Follows the cursor over the ruler/tracks; throttled with rAF so
   // hovering doesn't re-render the timeline more than once per frame.
@@ -421,10 +497,49 @@ export default function Timeline() {
 
   const handleTrackDragOver = useCallback((e: React.DragEvent, trackIndex: number) => {
     const hasMedia = [...e.dataTransfer.types].includes('application/clipdite-media');
-    if (!hasMedia) return;
+    const moveDrag = moveDragRef.current;
+    if (!hasMedia && !moveDrag) return;
 
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
+    e.dataTransfer.dropEffect = hasMedia ? 'copy' : 'move';
+
+    // Timeline-clip move: a ghost lands where the dragged clip will drop,
+    // its leading edge is the follow line that magnetises on snap.
+    if (!hasMedia && moveDrag) {
+      const dragged = useEditorStore.getState().tracks.flatMap((t) => t.clips)
+        .find((c) => c.id === moveDrag.draggedId);
+      if (!dragged) return;
+      const trackContent = (e.currentTarget as HTMLElement).querySelector(`.${trackContentClassName}`) as HTMLElement | null;
+      if (!trackContent) return;
+
+      const frameRaw = getFrameFromX(e.clientX, trackContent);
+      let dx = frameRaw - moveDrag.grabOffset - dragged.startFrame;
+      let guideFrame: number | null = null;
+      if (snapEnabledRef.current && !e.shiftKey) {
+        const snapped = snapDeltaFor([
+          dragged.startFrame + dx,
+          dragged.startFrame + dragged.durationInFrames + dx,
+        ], moveDrag.ids);
+        if (snapped) {
+          dx += snapped.delta;
+          guideFrame = snapped.frame;
+        }
+      }
+      const previewStart = dragged.startFrame + dx;
+      const media = mediaLookup.get(dragged.mediaId);
+      setHoveredTrackIndex(trackIndex);
+      setSnapGuideFrame(guideFrame);
+      setDropIndicator({
+        trackIndex,
+        frame: previewStart,
+        leftPx: previewStart / framesPerPixel,
+        widthPx: Math.max(20, dragged.durationInFrames / framesPerPixel),
+        mediaType: media?.type === 'audio' ? 'audio' : media?.type === 'image' ? 'image' : 'video',
+        mediaName: media?.name ?? '',
+        mediaDuration: media?.duration ?? 0,
+      });
+      return;
+    }
 
     const track = tracks.find((t) => t.index === trackIndex);
     if (!track || track.locked) return;
@@ -432,9 +547,7 @@ export default function Timeline() {
     const trackContent = (e.currentTarget as HTMLElement).querySelector(`.${trackContentClassName}`) as HTMLElement | null;
     if (!trackContent) return;
 
-    const frame = getFrameFromX(e.clientX, trackContent);
-    const leftPx = (frame / framesPerPixel);
-
+    let frame = getFrameFromX(e.clientX, trackContent);
     const currentDragMediaId = useEditorStore.getState().dragMediaId;
     if (!currentDragMediaId) return;
 
@@ -456,33 +569,46 @@ export default function Timeline() {
         setHoveredTrackIndex(null);
       }
       setDropIndicator(null);
+      setSnapGuideFrame(null);
       return;
     }
 
     const durationFrames = Math.round(media.duration * playback.fps);
 
+    // Magnet: the ghost's left/right edge snaps to existing edges, the
+    // playhead or frame 0 (Shift bypasses).
+    let guideFrame: number | null = null;
+    if (snapEnabledRef.current && !e.shiftKey) {
+      const snapped = snapDeltaFor([frame, frame + durationFrames]);
+      if (snapped) {
+        frame = Math.max(0, frame + snapped.delta);
+        guideFrame = snapped.frame;
+      }
+    }
+    setSnapGuideFrame(guideFrame);
+
     setHoveredTrackIndex(trackIndex);
     setDropIndicator({
       trackIndex,
       frame,
-      leftPx,
+      leftPx: (frame / framesPerPixel),
       widthPx: Math.max(20, durationFrames / framesPerPixel),
       mediaType: media.type,
       mediaName: media.name,
       mediaDuration: media.duration,
     });
-  }, [tracks, framesPerPixel, playback.fps, mediaLookup, getFrameFromX]);
+  }, [tracks, framesPerPixel, playback.fps, mediaLookup, getFrameFromX, snapDeltaFor]);
 
   const handleTrackDragLeave = useCallback((e: React.DragEvent) => {
     const related = e.relatedTarget as HTMLElement | null;
     const current = e.currentTarget as HTMLElement;
     if (related && current.contains(related)) return;
-    setDropIndicator(null);
-    setHoveredTrackIndex(null);
-  }, []);
+    clearDragVisuals();
+  }, [clearDragVisuals]);
 
   const handleClipDragStartOnTimeline = useCallback((e: React.DragEvent, clipId: string) => {
     // An edge trim is not a move — cancel the HTML5 drag.
+    moveDragRef.current = null;
     if (trimmingRef.current) {
       e.preventDefault();
       return;
@@ -502,14 +628,15 @@ export default function Timeline() {
       ? Math.max(0, getFrameFromX(e.clientX, trackContent) - dragged.startFrame)
       : 0;
     e.dataTransfer.setData('application/clipdite-timeline-clips', JSON.stringify({ ids, draggedId: clipId, grabOffset }));
+    moveDragRef.current = { ids, draggedId: clipId, grabOffset };
     if (!st.selectedClipIds.includes(clipId)) selectClip(clipId);
   }, [selectClip, getFrameFromX]);
 
   const handleClipDropOnTimeline = useCallback((e: React.DragEvent, targetTrackIndex: number) => {
     e.preventDefault();
     e.stopPropagation();
-    setDropIndicator(null);
-    setHoveredTrackIndex(null);
+    moveDragRef.current = null;
+    clearDragVisuals();
 
     const groupData = e.dataTransfer.getData('application/clipdite-timeline-clips');
     if (groupData) {
@@ -520,7 +647,18 @@ export default function Timeline() {
         if (dragged && ids.length > 0) {
           const trackContent = (e.currentTarget as HTMLElement).querySelector(`.${trackContentClassName}`) as HTMLElement | null;
           const frame = getFrameFromX(e.clientX, trackContent);
-          moveClips(ids, frame - (grabOffset ?? 0) - dragged.startFrame, targetTrackIndex - dragged.trackIndex);
+          let dx = frame - (grabOffset ?? 0) - dragged.startFrame;
+          // Magnet: the dragged clip's edges snap to neighbour edges, the
+          // playhead or frame 0 (its own edges are excluded; Shift bypasses).
+          if (snapEnabledRef.current && !e.shiftKey) {
+            const snapped = snapDeltaFor([
+              dragged.startFrame + dx,
+              dragged.startFrame + dragged.durationInFrames + dx,
+            ], ids);
+            if (snapped) dx += snapped.delta;
+          }
+          moveClips(ids, dx, targetTrackIndex - dragged.trackIndex);
+          setSnapGuideFrame(null);
           return;
         }
       } catch {
@@ -559,8 +697,14 @@ export default function Timeline() {
     const landingTrack = dropTrack;
 
     const trackContent = (e.currentTarget as HTMLElement).querySelector(`.${trackContentClassName}`) as HTMLElement | null;
-    const frame = getFrameFromX(e.clientX, trackContent);
+    let frame = getFrameFromX(e.clientX, trackContent);
     const durationFrames = Math.round(media.duration * playback.fps);
+
+    // Same magnet rules for the real drop as for the ghost preview.
+    if (snapEnabledRef.current && !e.shiftKey) {
+      const snapped = snapDeltaFor([frame, frame + durationFrames]);
+      if (snapped) frame = Math.max(0, frame + snapped.delta);
+    }
 
     // Premiere-style: a video with sound lands as a linked pair —
     // picture on the video track, sound on the audio track below.
@@ -621,7 +765,7 @@ export default function Timeline() {
     });
 
     setDragMediaId(null);
-  }, [mediaLookup, tracks, playback.fps, addClipToTrack, addTrack, moveClips, setDragMediaId, getFrameFromX]);
+  }, [mediaLookup, tracks, playback.fps, addClipToTrack, addTrack, moveClips, setDragMediaId, getFrameFromX, snapDeltaFor, clearDragVisuals]);
 
   return (
     <Panel>
@@ -636,9 +780,15 @@ export default function Timeline() {
               <path d="M12 5v14M5 12h14" />
             </svg>
           </PanelActionBtn>
-          <PanelActionBtn title="Snap">
+          <PanelActionBtn
+            className={cx(snapEnabled && PanelActionBtnActive)}
+            title={snapEnabled ? 'Snap on (Shift bypasses during drag)' : 'Snap off'}
+            onClick={() => setSnapEnabled((v) => !v)}
+          >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 3L3 21M3 3l18 18" />
+              <path d="m6 15-4-4 6.75-6.77a7.79 7.79 0 0 1 11 11L13 22l-4-4 6.39-6.36a2.14 2.14 0 0 0-3-3L6 15" />
+              <path d="m5 8 4 4" />
+              <path d="m12 15 4 4" />
             </svg>
           </PanelActionBtn>
         </PanelActions>
@@ -787,6 +937,7 @@ export default function Timeline() {
                 onDragOver={(e) => handleTrackDragOver(e, track.index)}
                 onDragLeave={handleTrackDragLeave}
                 onDrop={(e) => handleClipDropOnTimeline(e, track.index)}
+                onDragEnd={clearDragVisuals}
               >
                 <div className={`${TrackContent} ${trackContentClassName}`} data-track-index={track.index}>
                   {track.clips.length === 0 && dropIndicator?.trackIndex !== track.index && (
@@ -876,6 +1027,9 @@ export default function Timeline() {
             <Playhead style={{ left: `${playheadLeft}px` }}>
               <PlayheadTop />
             </Playhead>
+            {snapGuideFrame !== null && (
+              <SnapGuide style={{ left: `${snapGuideFrame / framesPerPixel}px` }} />
+            )}
             {marquee && (
               <MarqueeBox
                 style={{ left: `${marquee.x}px`, top: `${marquee.y}px`, width: `${marquee.w}px`, height: `${marquee.h}px` }}

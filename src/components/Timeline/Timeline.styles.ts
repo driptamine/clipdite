@@ -195,6 +195,24 @@ export const TrackBtnActive = css`
   color: var(--text-accent);
 `;
 
+// The Snap toggle in the panel header when snapping is on.
+export const PanelActionBtnActive = css`
+  color: var(--text-accent);
+  background: var(--bg-hover);
+`;
+
+// Vertical guide shown while a drag/trim is magnet-snapped to an edge.
+export const SnapGuide = styled.div`
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--text-accent);
+  box-shadow: 0 0 6px rgba(96, 165, 250, 0.6);
+  z-index: 18;
+  pointer-events: none;
+`;
+
 export const AddTrackBtn = styled.button`
   display: flex;
   align-items: center;
