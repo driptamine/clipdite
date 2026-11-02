@@ -363,9 +363,19 @@ export const Clip = styled.div`
   overflow: hidden;
   border: 1px solid transparent;
   transition: border-color 0.1s;
+  /* Holding a clip edge on touch must start a trim, not a text
+     selection / iOS callout / native image drag. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 
   &:hover {
     border-color: rgba(255, 255, 255, 0.3);
+  }
+
+  @media (max-width: 768px) {
+    -webkit-user-drag: none;
   }
 `;
 
@@ -426,7 +436,7 @@ export const ClipHandle = styled.div`
   bottom: 0;
   width: 6px;
   cursor: col-resize;
-  z-index: 2;
+  z-index: 3;
   touch-action: none;
 
   &:hover {
@@ -434,7 +444,35 @@ export const ClipHandle = styled.div`
   }
 
   @media (max-width: 768px) {
-    width: 12px;
+    /* Touch: no hover to reveal the edge, so the grab zone is much
+       wider and always marked with a grip bar. Capped at a share of
+       the clip so tiny clips still keep a tappable body. */
+    width: 20px;
+    max-width: 45%;
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 4px;
+      height: 40%;
+      min-height: 12px;
+      max-height: 22px;
+      border-radius: 2px;
+      background: rgba(255, 255, 255, 0.5);
+      pointer-events: none;
+    }
+  }
+`;
+
+// The edge being trimmed right now (finger pressed on it).
+export const ClipHandleActive = css`
+  background: rgba(255, 255, 255, 0.35);
+
+  &::after {
+    background: #fff;
   }
 `;
 

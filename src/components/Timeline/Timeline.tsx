@@ -46,6 +46,7 @@ import {
   ClipName,
   ClipTitle,
   ClipHandle,
+  ClipHandleActive,
   ClipHandleLeft,
   ClipHandleRight,
   Playhead,
@@ -395,6 +396,8 @@ export default function Timeline() {
   // Track-row heights and clip edge trims share one drag protocol.
   const trimmingRef = useRef(false);
   const suppressSeekRef = useRef(false);
+  // Which clip edge is held down right now, so the grip lights up.
+  const [activeTrim, setActiveTrim] = useState<{ id: string; side: 'in' | 'out' } | null>(null);
 
   const startTrackResize = useCallback((e: React.PointerEvent, trackIndex: number) => {
     e.preventDefault();
@@ -426,6 +429,7 @@ export default function Timeline() {
     e.preventDefault();
     e.stopPropagation();
     trimmingRef.current = true;
+    setActiveTrim({ id: clipId, side });
     const startX = e.clientX;
     const dragged = useEditorStore.getState().tracks.flatMap((t) => t.clips).find((c) => c.id === clipId);
     const originalEdge = dragged
@@ -433,17 +437,60 @@ export default function Timeline() {
       : 0;
     let applied = 0;
     let guideAt: number | null = null;
+    // Edge of the clip as it actually sits in the store right now. After a
+    // clamped trim it can lag behind `applied`; re-syncing keeps the edge
+    // from feeling stuck when the finger comes back the other way.
+    const currentEdge = () => {
+      const clips = useEditorStore.getState().tracks.flatMap((t) => t.clips);
+      const clip = clips.find((c) => c.id === clipId);
+      if (!clip) return originalEdge;
+      return side === 'in' ? clip.startFrame : clip.startFrame + clip.durationInFrames;
+    };
     const setTrimTotal = (total: number, guideFrame: number | null) => {
       guideAt = guideFrame;
       const diff = total - applied;
       if (diff === 0) return;
-      applied = total;
       trimClip(clipId, side, diff);
+      applied = currentEdge() - originalEdge;
       setSnapGuideFrame(guideFrame);
     };
-    const handleMove = (moveE: MouseEvent) => {
-      const raw = originalEdge + Math.round((moveE.clientX - startX) * framesPerPixel);
-      if (snapEnabledRef.current && !moveE.shiftKey) {
+
+    // Auto-scroll: dragging an edge to the side of the viewport keeps
+    // trimming instead of stopping dead at the screen border (a phone
+    // screen runs out of room fast). The scrolled distance is folded into
+    // the pointer delta so the edge keeps tracking the finger.
+    const area = tracksAreaRef.current;
+    let pointerX = e.clientX;
+    let shiftHeld = false;
+    let scrolled = 0;
+    let scrollRaf = 0;
+    const scrollTick = () => {
+      scrollRaf = 0;
+      if (!area) return;
+      const rect = area.getBoundingClientRect();
+      const zone = Math.min(72, rect.width * 0.2);
+      let step = 0;
+      if (pointerX < rect.left + zone) {
+        step = -Math.ceil(14 * Math.min(1, (rect.left + zone - pointerX) / zone));
+      } else if (pointerX > rect.right - zone) {
+        step = Math.ceil(14 * Math.min(1, (pointerX - (rect.right - zone)) / zone));
+      }
+      if (step === 0) return;
+      const before = area.scrollLeft;
+      area.scrollLeft = before + step;
+      const moved = area.scrollLeft - before;
+      if (moved === 0) return;
+      scrolled += moved;
+      applyPointer();
+      scrollRaf = requestAnimationFrame(scrollTick);
+    };
+    const queueAutoScroll = () => {
+      if (!scrollRaf) scrollRaf = requestAnimationFrame(scrollTick);
+    };
+
+    const applyPointer = () => {
+      const raw = originalEdge + Math.round((pointerX - startX + scrolled) * framesPerPixel);
+      if (snapEnabledRef.current && !shiftHeld) {
         const snapped = snapDeltaFor([raw], [clipId]);
         if (snapped && snapped.delta !== 0) {
           setTrimTotal(raw + snapped.delta, snapped.frame);
@@ -453,11 +500,20 @@ export default function Timeline() {
       // Unsnapped: the guide still follows the trimming edge.
       setTrimTotal(raw, Math.max(0, raw));
     };
+
+    const handleMove = (moveE: PointerEvent) => {
+      pointerX = moveE.clientX;
+      shiftHeld = moveE.shiftKey;
+      applyPointer();
+      queueAutoScroll();
+    };
     const handleUp = () => {
+      cancelAnimationFrame(scrollRaf);
       document.removeEventListener('pointermove', handleMove);
       document.removeEventListener('pointerup', handleUp);
       document.removeEventListener('pointercancel', handleUp);
       trimmingRef.current = false;
+      setActiveTrim(null);
       suppressSeekRef.current = true;
       if (guideAt !== null) setSnapGuideFrame(null);
     };
@@ -1002,7 +1058,10 @@ export default function Timeline() {
                         onDragStart={(e) => handleClipDragStartOnTimeline(e, clip.id)}
                       >
                         <ClipHandle
-                          className={cx(ClipHandleLeft)}
+                          className={cx(
+                            ClipHandleLeft,
+                            activeTrim?.id === clip.id && activeTrim.side === 'in' && ClipHandleActive,
+                          )}
                           onPointerDown={(e) => startClipTrim(e, clip.id, 'in')}
                         />
                         {/* Content follows the TRACK type: a linked audio
@@ -1034,7 +1093,10 @@ export default function Timeline() {
                           )}
                         </ClipInner>
                         <ClipHandle
-                          className={cx(ClipHandleRight)}
+                          className={cx(
+                            ClipHandleRight,
+                            activeTrim?.id === clip.id && activeTrim.side === 'out' && ClipHandleActive,
+                          )}
                           onPointerDown={(e) => startClipTrim(e, clip.id, 'out')}
                         />
                       </Clip>
