@@ -87,6 +87,39 @@ export default function ProgramMonitor() {
   const proxyUrl = activeVideo ? proxyUrls[activeVideo.media.id] : undefined;
   const playbackSrc = activeVideo?.media.url ? (proxyUrl ?? activeVideo.media.url) : undefined;
 
+  // Adopt a fresh source only while paused or when the clip itself changes.
+  // A proxy finishing mid-playback would otherwise remount the element and
+  // replay it from 0 while the playhead runs on — on slow phones that looks
+  // like the video looping a few seconds in.
+  const srcLockRef = useRef<{ src: string | undefined; mediaId: string | null }>({ src: undefined, mediaId: null });
+  if (!playback.isPlaying || activeVideo?.media.id !== srcLockRef.current.mediaId) {
+    srcLockRef.current = { src: playbackSrc, mediaId: activeVideo?.media.id ?? null };
+  }
+  const lockedSrc = srcLockRef.current.src;
+
+  // Buffering stall handling (weak mobile decoders): the wall-clock playhead
+  // keeps running while a starving <video> stands still, so seconds run away
+  // from the picture. Pause the clock on stall, resume when fed.
+  const stallPauseRef = useRef(false);
+  const playStartRef = useRef(0);
+  const lastVideoElRef = useRef<HTMLVideoElement | null>(null);
+  const lastResyncSeekRef = useRef(0);
+  const handleWaiting = useCallback(() => {
+    const st = useEditorStore.getState();
+    if (!st.playback.isPlaying || stallPauseRef.current) return;
+    const now = performance.now();
+    if (now - playStartRef.current < 1500) return; // first frames still loading
+    if (now - lastResyncSeekRef.current < 800) return; // our own seek, not a stall
+    stallPauseRef.current = true;
+    st.setPlayback({ isPlaying: false });
+  }, []);
+  const handleCanPlay = useCallback(() => {
+    if (!stallPauseRef.current) return;
+    stallPauseRef.current = false;
+    const st = useEditorStore.getState();
+    if (!st.playback.isPlaying) st.setPlayback({ isPlaying: true });
+  }, []);
+
   // Seek the video element while paused (step, scrub, clip change).
   // While playing the element is left alone: repeated currentTime writes
   // stall the audio track on mobile browsers.
@@ -97,18 +130,23 @@ export default function ProgramMonitor() {
     if (!Number.isFinite(sourceOffset)) return;
     if (video.readyState < 1) return;
     try { video.currentTime = sourceOffset; } catch { /* seek while loading */ }
-  }, [displayFrame, playback.isPlaying, activeVideo, sourceOffset, proxyUrl]);
+  }, [displayFrame, playback.isPlaying, activeVideo, sourceOffset, lockedSrc]);
 
   // While playing, resync only after a huge jump (e.g. tab switch).
+  // Throttled and skipped on a starving decoder: hammering currentTime on a
+  // struggling phone makes the stall worse instead of fixing it.
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !activeVideo || activeVideo.media.type !== 'video') return;
     if (!playback.isPlaying) return;
-    if (video.readyState < 1 || !Number.isFinite(sourceOffset)) return;
+    if (video.readyState < 2 || !Number.isFinite(sourceOffset)) return;
     if (Math.abs(video.currentTime - sourceOffset) > 2) {
+      const now = performance.now();
+      if (now - lastResyncSeekRef.current < 1000) return;
+      lastResyncSeekRef.current = now;
       try { video.currentTime = sourceOffset; } catch { /* ignore */ }
     }
-  }, [playback.currentFrame, playback.isPlaying, activeVideo, sourceOffset, proxyUrl]);
+  }, [playback.currentFrame, playback.isPlaying, activeVideo, sourceOffset, lockedSrc]);
 
   // Space (or the transport button) toggles real video playback.
   // wasPlayingRef aligns the frame once on (re)start, then hands off.
@@ -116,8 +154,15 @@ export default function ProgramMonitor() {
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !activeVideo || activeVideo.media.type !== 'video') return;
+    if (video !== lastVideoElRef.current) {
+      // Fresh element (clip change / source swap): give first frames a grace
+      // period before the stall detector may pause the clock.
+      lastVideoElRef.current = video;
+      playStartRef.current = performance.now();
+    }
     if (playback.isPlaying) {
       if (!wasPlayingRef.current && video.readyState >= 1 && Number.isFinite(sourceOffset)) {
+        playStartRef.current = performance.now();
         try { video.currentTime = sourceOffset; } catch { /* seek while loading */ }
       }
       wasPlayingRef.current = true;
@@ -134,7 +179,7 @@ export default function ProgramMonitor() {
       wasPlayingRef.current = false;
       video.pause();
     }
-  }, [playback.isPlaying, activeVideo, sourceOffset, proxyUrl]);
+  }, [playback.isPlaying, activeVideo, sourceOffset, lockedSrc]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -241,13 +286,15 @@ export default function ProgramMonitor() {
             <EmptyPreview>Drop clips on the timeline to preview</EmptyPreview>
           ) : activeVideo && activeVideo.media.type === 'video' ? (
             <video
-              key={playbackSrc}
+              key={lockedSrc}
               ref={videoRef}
-              src={playbackSrc}
+              src={lockedSrc}
               style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
               muted={playback.volume === 0 || audioBlocked}
               playsInline
               preload="auto"
+              onWaiting={handleWaiting}
+              onCanPlay={handleCanPlay}
             />
           ) : activeVideo && activeVideo.media.type === 'image' ? (
             <img
