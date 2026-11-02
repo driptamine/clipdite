@@ -78,6 +78,8 @@ export interface LayoutState {
   leftWidth: number;
   /** Source monitor width % inside the monitors row. */
   monitorsSplit: number;
+  /** Effects panel width % inside the monitors row (top right). */
+  effectsSplit: number;
   /** Timeline width % inside the bottom area. */
   timelineSplit: number;
   /** Track headers column width in px. */

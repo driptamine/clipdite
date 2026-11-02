@@ -59,7 +59,7 @@ export const ToolButtonActive = css`
   color: white;
 
   &:hover {
-    background: #3b82f6;
+    background: #6a63c4;
     color: white;
   }
 `;
@@ -150,7 +150,7 @@ export const ExportButton = styled.button`
   color: white;
 
   &:hover:not(:disabled) {
-    background: #3b82f6;
+    background: #6a63c4;
   }
 
   &:disabled {

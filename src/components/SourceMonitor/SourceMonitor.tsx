@@ -4,10 +4,6 @@ import { useEditorStore } from '../../store/editorStore';
 import { frameToTimecode } from '../../utils/time';
 import {
   Panel,
-  PanelHeader,
-  PanelTitle,
-  PanelActions,
-  PanelActionBtn,
   PreviewArea,
   PreviewContent,
   TimecodeBar,
@@ -55,22 +51,7 @@ export default function SourceMonitor() {
 
   return (
     <Panel>
-      <PanelHeader>
-        <PanelTitle>Source</PanelTitle>
-        <PanelActions>
-          <PanelActionBtn title="Mark In">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M4 4v16M4 12h12" />
-            </svg>
-          </PanelActionBtn>
-          <PanelActionBtn title="Mark Out">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M20 4v16M20 12H8" />
-            </svg>
-          </PanelActionBtn>
-        </PanelActions>
-      </PanelHeader>
-
+      {/* Headerless by design: every pixel goes to the preview image. */}
       <PreviewArea>
         {selectedMedia && selectedMedia.url ? (
           <PreviewContent>

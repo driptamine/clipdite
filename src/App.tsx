@@ -18,7 +18,6 @@ import {
   BottomProject,
   BottomRight,
   TimelineArea,
-  BottomSidebar,
   ResizeHandleHorizontal,
   ResizeHandleVertical,
   MonitorsRow,
@@ -41,7 +40,7 @@ export default function App() {
   // Panel/monitor sizes live in the store so every resize is saved locally.
   const layout = useEditorStore((s) => s.layout);
   const setLayout = useEditorStore((s) => s.setLayout);
-  const { topHeight, monitorsSplit, timelineSplit, bottomLeft } = layout;
+  const { topHeight, monitorsSplit, bottomLeft, effectsSplit } = layout;
 
   // Mobile-only: project panel starts hidden and opens on tap.
   // Desktop renders exactly as before (isMobile=false -> unchanged tree).
@@ -221,6 +220,8 @@ export default function App() {
     min: number,
     max: number,
     onChange: (v: number) => void,
+    /** Mirrored handles measure their panel's right edge (drag left = panel grows). */
+    mirror = false,
   ) => {
     const container = (e.currentTarget as HTMLElement).parentElement;
     if (!container) return;
@@ -231,7 +232,8 @@ export default function App() {
 
     const handleMove = (moveE: PointerEvent) => {
       const pos = axis === 'x' ? moveE.clientX : moveE.clientY;
-      onChange(Math.max(min, Math.min(max, initial + ((pos - startPos) / size) * 100)));
+      const delta = ((pos - startPos) / size) * 100;
+      onChange(Math.max(min, Math.min(max, mirror ? initial - delta : initial + delta)));
     };
 
     const handleUp = () => {
@@ -270,13 +272,18 @@ export default function App() {
         <TopPanels style={{ height: `${topHeight}%` }}>
           <TopRight style={{ width: '100%' }}>
             <div className={MonitorsRow} style={{ display: 'flex', height: '100%' }}>
-              <div style={{ width: `${monitorsSplit}%`, minWidth: 0, overflow: 'hidden' }}>
+              <div data-monitor="source" style={{ width: `${monitorsSplit}%`, minWidth: 0, overflow: 'hidden' }}>
                 <SourceMonitor />
               </div>
               <ResizeHandleVertical
-                onPointerDown={(e) => startSplitDrag(e, 'x', monitorsSplit, 20, 80, (v) => setLayout({ monitorsSplit: v }))} />
-              <div style={{ width: `${100 - monitorsSplit}%`, minWidth: 0, overflow: 'hidden' }}>
+                onPointerDown={(e) => startSplitDrag(e, 'x', monitorsSplit, 10, 100 - effectsSplit - 12, (v) => setLayout({ monitorsSplit: v }))} />
+              <div data-monitor="program" style={{ width: `${100 - monitorsSplit - effectsSplit}%`, minWidth: 0, overflow: 'hidden' }}>
                 <ProgramMonitor />
+              </div>
+              <ResizeHandleVertical
+                onPointerDown={(e) => startSplitDrag(e, 'x', effectsSplit, 12, 40, (v) => setLayout({ effectsSplit: v }), true)} />
+              <div data-monitor="effects" style={{ width: `${effectsSplit}%`, minWidth: 0, overflow: 'hidden' }}>
+                <EffectsPanel />
               </div>
             </div>
           </TopRight>
@@ -303,14 +310,9 @@ export default function App() {
             onToggleProject={() => setMobileProjectOpen((v) => !v)}
           />
           <BottomRight>
-            <TimelineArea style={{ width: `${timelineSplit}%` }}>
+            <TimelineArea style={{ width: '100%' }}>
               <Timeline />
             </TimelineArea>
-            <ResizeHandleVertical
-              onPointerDown={(e) => startSplitDrag(e, 'x', timelineSplit, 25, 85, (v) => setLayout({ timelineSplit: v }))} />
-            <BottomSidebar style={{ width: `${100 - timelineSplit}%` }}>
-              <EffectsPanel />
-            </BottomSidebar>
           </BottomRight>
         </BottomArea>
       </MainContent>

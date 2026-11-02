@@ -5,7 +5,7 @@ export const MenubarRoot = styled.div`
   display: flex;
   align-items: center;
   height: var(--menubar-height);
-  background: var(--bg-panel-header);
+  background: #000;
   border-bottom: 1px solid var(--border-subtle);
   padding: 0 8px;
   gap: 0;

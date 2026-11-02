@@ -22,12 +22,19 @@ export const Panel = styled.div`
   height: 100%;
   background: var(--bg-panel);
   overflow: hidden;
+  /* ArtCraft-style card: grey/white hairline outline, soft corners. */
+  /* 0.5px = exactly 1 physical pixel on Retina; stays perfectly thin
+     at 100% page zoom (1px would render as a fat 2px line there). */
+  border: 0.5px solid var(--border-color);
+  border-radius: 8px;
 `;
 
 export const PanelHeader = styled.div`
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  /* Actions sit right next to the title, at the left edge. */
+  justify-content: flex-start;
+  gap: 10px;
   height: var(--header-height);
   background: var(--bg-panel-header);
   border-bottom: 1px solid var(--border-subtle);
@@ -243,6 +250,9 @@ export const TimeRuler = styled.div`
   position: relative;
   overflow: hidden;
   flex-shrink: 0;
+  /* Click-to-seek stays, but the I-beam text cursor makes no sense here. */
+  cursor: default;
+  user-select: none;
 
   @media (max-width: 768px) {
     display: none;
@@ -265,33 +275,36 @@ export const MobileRuler = styled.div`
     background: var(--bg-panel-header);
     border-bottom: 1px solid var(--border-subtle);
     overflow: hidden;
+    cursor: default;
+    user-select: none;
   }
 `;
 
 export const TimeMarker = styled.div`
   position: absolute;
   top: 0;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
+  white-space: nowrap;
   font-size: 9px;
+  line-height: 10px;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  padding-bottom: 2px;
+  /* Center the text on its tick, like the lines below it. */
+  transform: translateX(-50%);
+  /* Text labels: no I-beam / selection cursor over the ruler. */
+  cursor: default;
+  user-select: none;
 `;
 
-export const TimeMarkerLine = styled.div`
-  width: 1px;
-  height: 8px;
-  background: var(--border-color);
-  margin-top: 2px;
-`;
-
-export const TimeMarkerLineLong = css`
-  height: 12px;
-  background: var(--text-muted);
+// Tick lines for the ruler are painted as repeating-linear-gradient
+// backgrounds on this layer (period set inline per zoom level) instead
+// of DOM boxes — gradient repeats are mathematically even, while
+// individually positioned 1px boxes snap to whole CSS px and jitter.
+export const RulerTicks = styled.div`
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 2px;
+  pointer-events: none;
 `;
 
 export const TracksArea = styled.div`
@@ -458,7 +471,7 @@ export const PlayheadTop = styled.div`
   cursor: ew-resize;
 `;
 
-export const HoverIndicator = styled.div`
+export const Skimmer = styled.div`
   position: absolute;
   top: 0;
   bottom: 0;
@@ -468,7 +481,7 @@ export const HoverIndicator = styled.div`
   pointer-events: none;
 `;
 
-export const HoverTimeTag = styled.div`
+export const SkimmerTimeTag = styled.div`
   position: absolute;
   top: 2px;
   left: 5px;

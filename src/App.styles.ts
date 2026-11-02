@@ -66,32 +66,26 @@ export const BottomRight = styled.div`
   display: flex;
   min-width: 0;
   overflow: hidden;
+  /* Breathing room between the toolbar and the timeline card. */
+  margin-left: 8px;
 `;
 
 export const ResizeHandleHorizontal = styled.div`
   width: 100%;
-  height: 4px;
-  background: var(--border-subtle);
+  height: 8px;
+  background: #000;
   cursor: ns-resize;
   flex-shrink: 0;
   touch-action: none;
-
-  &:hover {
-    background: var(--bg-clip-video);
-  }
 `;
 
 export const ResizeHandleVertical = styled.div`
-  width: 4px;
+  width: 8px;
   height: 100%;
-  background: var(--border-subtle);
+  background: #000;
   cursor: ew-resize;
   flex-shrink: 0;
   touch-action: none;
-
-  &:hover {
-    background: var(--bg-clip-video);
-  }
 `;
 
 export const StatusBar = styled.div`
@@ -135,19 +129,25 @@ export const StatusDot = styled.span`
 // timeline (V1/V2/V3 rows) is preserved — rows keep their order and heights.
 // ---------------------------------------------------------------------------
 
-/** Program-only monitors on mobile; Source stays mounted but hidden. */
+/** Program-only monitors on mobile; Source and Effects stay mounted but hidden. */
 export const MonitorsRow = css`
   @media (max-width: 768px) {
     flex-direction: column;
 
-    & > div:first-child {
+    & > [data-monitor='source'] {
       display: none;
     }
 
-    & > div:last-child {
+    & > [data-monitor='program'] {
       width: 100% !important;
       height: 100%;
       min-height: 0;
+    }
+
+    /* Effects lives in the top row on desktop; on mobile it would steal
+       the Program monitor's space, so it stays hidden here. */
+    & > [data-monitor='effects'] {
+      display: none;
     }
 
     & ${ResizeHandleVertical} {
@@ -156,7 +156,7 @@ export const MonitorsRow = css`
   }
 `;
 
-/** Bottom reflow: project / timeline / effects / toolbar last, scrollable. */
+/** Bottom reflow: project / timeline / toolbar last, scrollable. */
 export const BottomAreaMobile = css`
   @media (max-width: 768px) {
     flex-direction: column;
@@ -183,20 +183,12 @@ export const BottomAreaMobile = css`
       flex-direction: column;
       flex: none;
       order: 2;
+      /* Desktop-only toolbar gap does not apply to the stacked column. */
+      margin-left: 0;
 
       & ${TimelineArea} {
         width: 100% !important;
         height: 340px;
-        flex: none;
-      }
-
-      & ${ResizeHandleVertical} {
-        display: none;
-      }
-
-      & ${BottomSidebar} {
-        width: 100% !important;
-        height: 200px;
         flex: none;
       }
     }

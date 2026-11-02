@@ -31,8 +31,7 @@ import {
   TimeRuler,
   MobileRuler,
   TimeMarker,
-  TimeMarkerLine,
-  TimeMarkerLineLong,
+  RulerTicks,
   TracksArea,
   TrackRow,
   TrackRowAudio,
@@ -51,8 +50,8 @@ import {
   ClipHandleRight,
   Playhead,
   PlayheadTop,
-  HoverIndicator,
-  HoverTimeTag,
+  Skimmer,
+  SkimmerTimeTag,
   SilenceTrack,
   ClipDropGhost,
   DropIndicatorLine,
@@ -137,30 +136,61 @@ export default function Timeline() {
 
   const totalFrames = playback.durationInFrames;
 
-  const timeMarkers = useMemo(() => {
-    const markers: { frame: number; label: string; major: boolean }[] = [];
-    const framesPerSecond = playback.fps;
-    let step = framesPerSecond;
+  const rulerTicks = useMemo(() => {
+    // Labeled ticks must never overlap: pick the smallest "nice" time
+    // interval that still leaves at least ~64px between labels. The old
+    // zoom-threshold table let labels collide at low zoom-out levels.
+    const niceSeconds = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800];
+    const minLabelFrames = 64 * framesPerPixel;
+    const labelStep =
+      (niceSeconds.find((s) => s * playback.fps >= minLabelFrames) ?? 3600) *
+      playback.fps;
 
-    if (zoom < 0.3) step = framesPerSecond * 10;
-    else if (zoom < 0.7) step = framesPerSecond * 5;
-    else if (zoom < 1.5) step = framesPerSecond;
-    else if (zoom < 3) step = Math.round(framesPerSecond / 2);
-    else step = Math.round(framesPerSecond / 4);
-
-    for (let f = 0; f < totalFrames; f += step) {
-      const isMajor = f % (framesPerSecond * 10) === 0;
-      markers.push({
+    const labels: { frame: number; label: string }[] = [];
+    for (let f = 0; f <= totalFrames; f += labelStep) {
+      labels.push({
         frame: f,
         label: frameToTimecode(f, playback.fps).substring(3),
-        major: isMajor,
       });
     }
-    return markers;
-  }, [totalFrames, playback.fps, zoom]);
+
+    // Tick lines are PAINTED with a repeating gradient, not placed as DOM
+    // boxes: fractional-period repeats stay mathematically even, while
+    // individually laid-out boxes snap to whole CSS px and jitter
+    // (e.g. an 18.75px step renders as alternating 18/19px gaps).
+    // 4 minor ticks per labeled interval + a brighter line every minute.
+    const minorPx = labelStep / (4 * framesPerPixel);
+    const majorPx = (60 * playback.fps) / framesPerPixel;
+    return { labels, minorPx, majorPx };
+  }, [totalFrames, playback.fps, framesPerPixel]);
 
   const playheadLeft = playback.currentFrame / framesPerPixel;
   const totalWidth = totalFrames / framesPerPixel;
+
+  // Tick-line layers painted as repeating gradients (see rulerTicks memo).
+  const renderTickLayers = () => {
+    const { minorPx, majorPx } = rulerTicks;
+    return (
+      <>
+        {minorPx >= 2 && (
+          <RulerTicks
+            style={{
+              height: 8,
+              backgroundImage: `repeating-linear-gradient(to right, var(--border-color) 0, var(--border-color) 1px, transparent 1px, transparent ${minorPx}px)`,
+            }}
+          />
+        )}
+        {majorPx >= 3 && (
+          <RulerTicks
+            style={{
+              height: 12,
+              backgroundImage: `repeating-linear-gradient(to right, var(--text-muted) 0, var(--text-muted) 1px, transparent 1px, transparent ${majorPx}px)`,
+            }}
+          />
+        )}
+      </>
+    );
+  };
 
   const getFrameFromX = useCallback((clientX: number, trackContentEl: HTMLElement | null) => {
     if (!trackContentEl) return 0;
@@ -181,6 +211,8 @@ export default function Timeline() {
   // the timeline start. Toggleable from the header button; holding Shift
   // bypasses it for a single drag.
   const [snapEnabled, setSnapEnabled] = useState(true);
+  const skimmer = useEditorStore((s) => s.skimmer);
+  const setSkimmer = useEditorStore((s) => s.setSkimmer);
   const [snapGuideFrame, setSnapGuideFrame] = useState<number | null>(null);
   const SNAP_THRESHOLD_PX = 8;
 
@@ -436,17 +468,28 @@ export default function Timeline() {
 
   // Follows the cursor over the ruler/tracks; throttled with rAF so
   // hovering doesn't re-render the timeline more than once per frame.
+  // When the skimmer is enabled, the hovered frame also lands in the
+  // store so the Program monitor can preview it without moving the
+  // playhead (like the FCP skimmer).
   const handleHoverMove = useCallback((e: React.MouseEvent<HTMLElement>) => {
     const el = e.currentTarget;
     const rect = el.getBoundingClientRect();
     const x = e.clientX - rect.left + el.scrollLeft;
     cancelAnimationFrame(hoverRafRef.current);
-    hoverRafRef.current = requestAnimationFrame(() => setHoverLeftPx(x));
+    hoverRafRef.current = requestAnimationFrame(() => {
+      setHoverLeftPx(x);
+      const store = useEditorStore.getState();
+      if (store.skimmer) {
+        store.setSkimmerFrame(Math.max(0, Math.round(x * Math.max(1, 4 / store.zoom))));
+      }
+    });
   }, []);
 
   const handleHoverLeave = useCallback(() => {
     cancelAnimationFrame(hoverRafRef.current);
     setHoverLeftPx(null);
+    const store = useEditorStore.getState();
+    if (store.skimmer) store.setSkimmerFrame(null);
   }, []);
 
   const handleClipClick = useCallback((e: React.MouseEvent, clipId: string) => {
@@ -773,6 +816,16 @@ export default function Timeline() {
             </svg>
           </PanelActionBtn>
           <PanelActionBtn
+            className={cx(skimmer && PanelActionBtnActive)}
+            title={skimmer ? 'Skimmer on (hover previews frames)' : 'Skimmer off'}
+            onClick={() => setSkimmer(!skimmer)}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 4v16M12 4 9 7m3-3 3 3" />
+              <path d="M8 20h8" />
+            </svg>
+          </PanelActionBtn>
+          <PanelActionBtn
             className={cx(snapEnabled && PanelActionBtnActive)}
             title={snapEnabled ? 'Snap on (Shift bypasses during drag)' : 'Snap off'}
             onClick={() => setSnapEnabled((v) => !v)}
@@ -872,15 +925,13 @@ export default function Timeline() {
             onMouseMove={handleHoverMove}
             onMouseLeave={handleHoverLeave}
           >
-            {timeMarkers.map((marker, i) => (
+            {renderTickLayers()}
+            {rulerTicks.labels.map((marker, i) => (
               <TimeMarker
                 key={i}
                 style={{ left: `${(marker.frame / framesPerPixel)}px` }}
               >
                 <span>{marker.label}</span>
-                <TimeMarkerLine
-                  className={cx(marker.major && TimeMarkerLineLong)}
-                />
               </TimeMarker>
             ))}
           </TimeRuler>
@@ -905,15 +956,13 @@ export default function Timeline() {
               style={{ width: `${totalWidth}px` }}
               onClick={(e) => seekToClientX(e.clientX, innerRulerRef.current)}
             >
-              {timeMarkers.map((marker, i) => (
+              {renderTickLayers()}
+              {rulerTicks.labels.map((marker, i) => (
                 <TimeMarker
                   key={i}
                   style={{ left: `${(marker.frame / framesPerPixel)}px` }}
                 >
                   <span>{marker.label}</span>
-                  <TimeMarkerLine
-                    className={cx(marker.major && TimeMarkerLineLong)}
-                  />
                 </TimeMarker>
               ))}
             </MobileRuler>
@@ -956,10 +1005,13 @@ export default function Timeline() {
                           className={cx(ClipHandleLeft)}
                           onPointerDown={(e) => startClipTrim(e, clip.id, 'in')}
                         />
-                        {media && media.type === 'video' && media.url && (
+                        {/* Content follows the TRACK type: a linked audio
+                            mate references the same video media, but must
+                            show its waveform on A-tracks, not frames. */}
+                        {media && track.type === 'video' && media.type === 'video' && media.url && (
                           <ClipFilmstrip media={media} clip={clip} fps={playback.fps} />
                         )}
-                        {media && media.type === 'audio' && media.url && (
+                        {media && track.type === 'audio' && media.url && (
                           <ClipWavestrip media={media} clip={clip} fps={playback.fps} />
                         )}
                         <ClipTitle>
@@ -1027,11 +1079,11 @@ export default function Timeline() {
               />
             )}
             {hoverLeftPx !== null && (
-              <HoverIndicator style={{ left: `${hoverLeftPx}px` }}>
-                <HoverTimeTag>
+              <Skimmer style={{ left: `${hoverLeftPx}px` }}>
+                <SkimmerTimeTag>
                   {frameToTimecode(Math.max(0, Math.round(hoverLeftPx * framesPerPixel)), playback.fps).substring(3)}
-                </HoverTimeTag>
-              </HoverIndicator>
+                </SkimmerTimeTag>
+              </Skimmer>
             )}
           </TracksArea>
         </TimelineTracksContainer>

@@ -1,27 +1,34 @@
+/* ArtCraft HUD theme (app.getartcraft.com) — tokens lifted from their
+   production CSS bundle, with headers forced to pure black per design:
+   canvas #0b0b0c → panels #161618, black panel-headers, hairline white
+   borders, warm-white text, Geist Mono HUD labels, Archivo display face,
+   #2d81ff primary accent. */
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Geist+Mono:wght@300..900&family=Instrument+Serif:ital@0;1&display=swap');
+
 :root {
   /* The UI is natively dark: this opts the page out of Chrome's
      forced AutoDark (chrome://flags), which would otherwise invert
      images such as the ClipFilmstrip thumbnails. */
   color-scheme: dark;
-  --bg-darkest: #1a1a1e;
-  --bg-dark: #232329;
-  --bg-panel: #2a2a32;
-  --bg-panel-header: #33333d;
-  --bg-input: #1e1e24;
-  --bg-hover: #3a3a44;
-  --bg-active: #4a4a56;
-  --bg-clip-video: #2563eb;
-  --bg-clip-audio: #059669;
-  --bg-playhead: #e53e3e;
-  --bg-selection: rgba(59, 130, 246, 0.25);
+  --bg-darkest: #0b0b0c;
+  --bg-dark: #101014;
+  --bg-panel: #161618;
+  --bg-panel-header: #000;
+  --bg-input: #121316;
+  --bg-hover: rgba(255, 255, 255, 0.08);
+  --bg-active: rgba(255, 255, 255, 0.13);
+  --bg-clip-video: #5651a7;
+  --bg-clip-audio: #00a873;
+  --bg-playhead: #5651a7;
+  --bg-selection: rgba(86, 81, 167, 0.25);
 
-  --border-color: #3a3a44;
-  --border-subtle: #2f2f3a;
+  --border-color: rgba(255, 255, 255, 0.15);
+  --border-subtle: rgba(255, 255, 255, 0.08);
 
-  --text-primary: #e2e2e8;
-  --text-secondary: #9ca3af;
-  --text-muted: #6b7280;
-  --text-accent: #60a5fa;
+  --text-primary: #f2f1ee;
+  --text-secondary: rgba(255, 255, 255, 0.64);
+  --text-muted: rgba(255, 255, 255, 0.42);
+  --text-accent: #5651a7;
 
   --track-height: 48px;
   --header-height: 32px;
@@ -29,8 +36,10 @@
   --timecode-height: 24px;
   --playhead-width: 2px;
 
-  --font-mono: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-display: 'Archivo', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-serif-accent: 'Instrument Serif', Georgia, 'Times New Roman', serif;
 
   font-family: var(--font-sans);
   font-size: 12px;
@@ -57,23 +66,9 @@ html, body, #root {
   }
 }
 
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--bg-dark);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--bg-active);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
-}
+/* Native overlay scrollbars (macOS): they appear only while scrolling.
+   Styling ::-webkit-scrollbar at all would force Chrome into the
+   always-visible mode, so we deliberately leave them untouched. */
 
 input, select, button {
   font-family: var(--font-sans);
@@ -87,8 +82,39 @@ button {
   color: inherit;
 }
 
+input, select {
+  border: none;
+}
+
 ::selection {
   background: var(--bg-selection);
+}
+
+/* ArtCraft focus ring and HUD utility faces (ready for panel titles/labels). */
+:focus-visible {
+  outline: 2px solid #74aaff;
+  outline-offset: 3px;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  font-stretch: 118%;
+  font-weight: 620;
+}
+
+.font-serif-italic {
+  font-family: var(--font-serif-accent);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.hud-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
 }
 
 .tooltip {
@@ -96,7 +122,7 @@ button {
   background: var(--bg-panel);
   border: 1px solid var(--border-color);
   padding: 4px 8px;
-  border-radius: 3px;
+  border-radius: 4px;
   font-size: 11px;
   white-space: nowrap;
   pointer-events: none;

@@ -7,6 +7,11 @@ export const Panel = styled.div`
   height: 100%;
   background: var(--bg-panel);
   overflow: hidden;
+  /* ArtCraft-style card: grey/white hairline outline, soft corners. */
+  /* 0.5px = exactly 1 physical pixel on Retina; stays perfectly thin
+     at 100% page zoom (1px would render as a fat 2px line there). */
+  border: 0.5px solid var(--border-color);
+  border-radius: 8px;
 `;
 
 export const PanelHeader = styled.div`

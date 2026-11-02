@@ -27,6 +27,12 @@ interface EditorState {
   selectedMediaId: string | null;
   selectedTrackIndex: number | null;
   zoom: number;
+  /** Skimmer toggle (hover preview like FCP): session-only. */
+  skimmer: boolean;
+  setSkimmer: (v: boolean) => void;
+  /** Frame currently skimmed (hovered) on the timeline, or null. */
+  skimmerFrame: number | null;
+  setSkimmerFrame: (frame: number | null) => void;
   scrollPosition: number;
   isDragging: boolean;
   dragClipId: string | null;
@@ -160,6 +166,8 @@ export const useEditorStore = create<EditorState>((set) => ({
   selectedMediaId: null,
   selectedTrackIndex: null,
   zoom: 1,
+  skimmer: false,
+  skimmerFrame: null,
   scrollPosition: 0,
   isDragging: false,
   dragClipId: null,
@@ -168,7 +176,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   isSourcePanelOpen: false,
   currentTimecode: '00:00:00:00',
   proxyUrls: {},
-  layout: { topHeight: 55, leftWidth: 35, monitorsSplit: 50, timelineSplit: 72, headersWidth: 120, bottomLeft: 20 },
+  layout: { topHeight: 55, leftWidth: 35, monitorsSplit: 38, timelineSplit: 100, headersWidth: 120, bottomLeft: 20, effectsSplit: 22 },
   past: [],
   future: [],
   hasHydrated: false,
@@ -217,10 +225,11 @@ export const useEditorStore = create<EditorState>((set) => ({
           ? {
               topHeight: clamp(num(l.topHeight, 55), 20, 80),
               leftWidth: clamp(num(l.leftWidth, 35), 15, 70),
-              monitorsSplit: clamp(num(l.monitorsSplit, 50), 20, 80),
+              monitorsSplit: clamp(num(l.monitorsSplit, 38), 10, 70),
               timelineSplit: clamp(num(l.timelineSplit, 72), 25, 85),
               headersWidth: clamp(num(l.headersWidth, 120), 24, 320),
               bottomLeft: clamp(num(l.bottomLeft, 20), 10, 40),
+              effectsSplit: clamp(num(l.effectsSplit, 22), 12, 40),
             }
           : state.layout,
       };
@@ -729,6 +738,8 @@ export const useEditorStore = create<EditorState>((set) => ({
     })),
 
   setZoom: (zoom) => set({ zoom: Math.max(0.1, Math.min(10, zoom)) }),
+  setSkimmer: (v) => set((state) => ({ skimmer: v, skimmerFrame: v ? state.skimmerFrame : null })),
+  setSkimmerFrame: (frame) => set({ skimmerFrame: frame }),
   setScrollPosition: (pos) => set({ scrollPosition: pos }),
   setDragging: (isDragging, clipId) => set({ isDragging, dragClipId: clipId || null }),
   setDragMediaId: (mediaId) => set({ dragMediaId: mediaId }),
