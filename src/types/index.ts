@@ -24,6 +24,9 @@ export interface TimelineClip {
   effects: Effect[];
   opacity: number;
   volume: number;
+  /** Playback rate: 1 = normal, <1 = slow motion, >1 = fast. Timeline
+   * duration = (outPoint - inPoint) / speed. */
+  speed: number;
   /** Premiere-style link: the paired video/audio clip that travels together. */
   linkedClipId?: string;
 }

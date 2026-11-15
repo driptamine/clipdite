@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import { cx } from '@linaria/core';
 import { useEditorStore, DEFAULT_TRACK_HEIGHT } from '../../store/editorStore';
 import { frameToTimecode } from '../../utils/time';
+import { clipSpeed } from '../../utils/speed';
 import { displayOrder, findLinkedAudioTrack } from '../../utils/tracks';
 import { probeMediaFile } from '../../utils/mediaProbe';
 import { loadFileBlob } from '../../utils/mediaStorage';
@@ -807,6 +808,7 @@ export default function Timeline() {
         durationInFrames: durationFrames,
         inPoint: 0,
         outPoint: durationFrames,
+        speed: 1,
         effects: [],
         opacity: 100,
         volume: 0,
@@ -850,6 +852,7 @@ export default function Timeline() {
       durationInFrames: durationFrames,
       inPoint: 0,
       outPoint: durationFrames,
+      speed: 1,
       effects: [],
       opacity: 100,
       volume: 0,
@@ -1075,6 +1078,24 @@ export default function Timeline() {
                         )}
                         <ClipTitle>
                           <ClipName>{clipName}</ClipName>
+                          {clipSpeed(clip) !== 1 && (
+                            <span
+                              title={`Clip speed ${Math.round(clipSpeed(clip) * 100)}%`}
+                              style={{
+                                marginLeft: 'auto',
+                                fontSize: 9,
+                                fontWeight: 700,
+                                color: '#fef08a',
+                                background: 'rgba(0,0,0,0.45)',
+                                borderRadius: 3,
+                                padding: '0 4px',
+                                lineHeight: '12px',
+                                flexShrink: 0,
+                              }}
+                            >
+                              {Math.round(clipSpeed(clip) * 100)}%
+                            </span>
+                          )}
                         </ClipTitle>
                         <ClipInner style={{ position: 'relative', zIndex: 1 }}>
                           {media && (media.type === 'video' || media.type === 'image') && (

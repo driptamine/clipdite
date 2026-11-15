@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { cx } from '@linaria/core';
 import { useEditorStore } from '../../store/editorStore';
+import { SHOW_CLIP_PROPERTIES_EVENT } from '../EffectsPanel/EffectsPanel';
 import { saveNow } from '../../utils/persist';
 import { clearFileBlobs } from '../../utils/mediaStorage';
 import { runTimelineExport } from '../../utils/exportVideo';
@@ -106,7 +107,11 @@ export default function Menubar() {
           { label: 'Enable', shortcut: '⇧E' },
           { label: 'Unlink', shortcut: '⌘L' },
           { separator: true, label: '' },
-          { label: 'Speed/Duration...', shortcut: '⌘R' },
+          {
+            label: 'Speed/Duration...',
+            shortcut: '⌘R',
+            action: () => window.dispatchEvent(new CustomEvent(SHOW_CLIP_PROPERTIES_EVENT)),
+          },
         ],
       },
       {

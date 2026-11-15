@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { cx } from '@linaria/core';
 import { useEditorStore } from '../../store/editorStore';
 import { v4 as uuidv4 } from 'uuid';
+import { clipSpeed } from '../../utils/speed';
 import {
   Panel,
   PanelHeader,
@@ -69,11 +70,24 @@ const effectDefs: EffectDef[] = [
   { name: 'Equalizer', type: 'audio', category: 'Audio Effects', params: { low: 0, mid: 0, high: 0 } },
 ];
 
+/** Window event that switches the Effects panel to the Properties tab
+ * (fired by Clip > Speed/Duration and the ⌘R shortcut). */
+export const SHOW_CLIP_PROPERTIES_EVENT = 'clipdite:show-clip-properties';
+
+/** Slow-motion and fast-motion presets shown under clip properties. */
+const SPEED_PRESETS = [25, 50, 75, 100, 150, 200];
+
 export default function EffectsPanel() {
-  const { selectedClipId, addEffectToClip, tracks } = useEditorStore();
+  const { selectedClipId, addEffectToClip, setClipSpeed, tracks } = useEditorStore();
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'effects' | 'presets' | 'properties'>('effects');
   const [openCategories, setOpenCategories] = useState<Set<string>>(new Set(['Color Correction', 'Blur & Sharpen']));
+
+  useEffect(() => {
+    const show = () => setActiveTab('properties');
+    window.addEventListener(SHOW_CLIP_PROPERTIES_EVENT, show);
+    return () => window.removeEventListener(SHOW_CLIP_PROPERTIES_EVENT, show);
+  }, []);
 
   const selectedClip = useMemo(() => {
     for (const track of tracks) {
@@ -216,6 +230,45 @@ export default function EffectsPanel() {
                   max={100}
                   value={selectedClip.clip.opacity}
                 />
+              </PropertyRow>
+              <PropertyRow>
+                <PropertyLabel>Speed</PropertyLabel>
+                <PropertyValue>{Math.round(clipSpeed(selectedClip.clip) * 100)}%</PropertyValue>
+              </PropertyRow>
+              <PropertyRow>
+                <PropertySlider
+                  type="range"
+                  min={10}
+                  max={400}
+                  value={Math.round(clipSpeed(selectedClip.clip) * 100)}
+                  onChange={(e) => setClipSpeed(selectedClip.clip.id, Number(e.target.value) / 100)}
+                  title="10% = 10x slow motion, 100% = normal, 400% = 4x fast"
+                />
+              </PropertyRow>
+              <PropertyRow>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {SPEED_PRESETS.map((pct) => {
+                    const active = Math.round(clipSpeed(selectedClip.clip) * 100) === pct;
+                    return (
+                      <button
+                        key={pct}
+                        onClick={() => setClipSpeed(selectedClip.clip.id, pct / 100)}
+                        title={pct < 100 ? `Slow motion (${pct}%)` : pct > 100 ? `Fast motion (${pct}%)` : 'Normal speed'}
+                        style={{
+                          fontSize: 10,
+                          padding: '2px 8px',
+                          borderRadius: 4,
+                          border: '1px solid var(--border-color)',
+                          background: active ? 'var(--text-accent)' : 'transparent',
+                          color: active ? '#fff' : 'var(--text-primary)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {pct}%
+                      </button>
+                    );
+                  })}
+                </div>
               </PropertyRow>
               {selectedClip.trackType === 'audio' && (
                 <>

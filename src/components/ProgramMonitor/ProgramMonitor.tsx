@@ -3,6 +3,7 @@ import { cx } from '@linaria/core';
 import { useEditorStore } from '../../store/editorStore';
 import type { MediaItem, TimelineClip } from '../../types';
 import { frameToTimecode } from '../../utils/time';
+import { sourceOffsetFor, clipSpeed } from '../../utils/speed';
 import {
   Panel,
   PreviewArea,
@@ -75,9 +76,11 @@ export default function ProgramMonitor() {
   }, [tracks, displayFrame, mediaLookup]);
 
   // Source-time offset (seconds) of the playhead inside the active clip.
+  // A slowed clip advances through fewer source frames per timeline frame.
+  const activeRate = activeVideo ? clipSpeed(activeVideo.clip) : 1;
   const sourceOffset = activeVideo
     ? Math.min(
-        Math.max(0, (displayFrame - activeVideo.clip.startFrame + activeVideo.clip.inPoint) / playback.fps),
+        Math.max(0, sourceOffsetFor(activeVideo.clip, displayFrame) / playback.fps),
         Math.max(0, activeVideo.media.duration - 0.05),
       )
     : 0;
@@ -181,10 +184,12 @@ export default function ProgramMonitor() {
     }
   }, [playback.isPlaying, activeVideo, sourceOffset, lockedSrc]);
 
+  // The <video> element itself plays the source at the clip's rate so
+  // picture stays glued to the timeline playhead while playing.
   useEffect(() => {
     const video = videoRef.current;
-    if (video) video.playbackRate = 1;
-  }, [activeVideo?.media.id]);
+    if (video) video.playbackRate = activeRate;
+  }, [activeVideo?.media.id, activeVideo?.clip.id, activeRate]);
 
   // ---- Timeline audio (MP3 clips on A1/A2/..., linked audio mates) ----
   // The <video> element above carries embedded sound only for its own
@@ -206,7 +211,7 @@ export default function ProgramMonitor() {
         list.push({
           clip,
           media,
-          offset: Math.max(0, (playback.currentFrame - clip.startFrame + clip.inPoint) / playback.fps),
+          offset: Math.max(0, sourceOffsetFor(clip, playback.currentFrame) / playback.fps),
         });
       }
     }
@@ -234,7 +239,7 @@ export default function ProgramMonitor() {
         // Out-of-range volume on some engines — keep the previous level.
       }
       el.muted = playback.volume === 0 || audioBlocked;
-      el.playbackRate = 1;
+      el.playbackRate = clipSpeed(a.clip);
       if (playback.isPlaying) {
         const attempt = el.play();
         if (attempt) {

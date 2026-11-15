@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import type { MediaItem, Track, TimelineClip, PlaybackState, ProjectState, LayoutState, Effect } from '../types';
 import { deleteFileBlob } from '../utils/mediaStorage';
+import { clampSpeed, clipSpeed } from '../utils/speed';
 
 export interface ExportStatus {
   phase: 'idle' | 'working' | 'done' | 'error';
@@ -80,6 +81,9 @@ interface EditorState {
   setActiveTool: (tool: ToolId) => void;
   moveClip: (clipId: string, newStartFrame: number, newTrackIndex: number) => void;
   trimClip: (clipId: string, side: 'in' | 'out', deltaFrames: number) => void;
+  /** Premiere-style Speed/Duration: keeps the in-point, retimes the
+   * timeline duration. Linked partners retime together. */
+  setClipSpeed: (clipId: string, speed: number) => void;
   updateClipEffect: (clipId: string, effect: Effect) => void;
   addEffectToClip: (clipId: string, effect: Effect) => void;
   removeEffectFromClip: (clipId: string, effectId: string) => void;
@@ -211,9 +215,15 @@ export const useEditorStore = create<EditorState>((set) => ({
       const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
       const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
       const l = snap.layout;
+      // Snapshots saved before clip speed existed carry no `speed`
+      // field — those clips play at normal rate.
+      const tracks = snap.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) => ({ ...clip, speed: clipSpeed(clip) })),
+      }));
       return {
         project: snap.project,
-        tracks: snap.tracks,
+        tracks,
         mediaItems: snap.mediaItems,
         selectedClipId: null,
         selectedClipIds: [],
@@ -392,10 +402,13 @@ export const useEditorStore = create<EditorState>((set) => ({
         const rightDuration = clip.startFrame + clip.durationInFrames - frame;
         // Ignore cuts too close to the edges (same 5-frame guard as trim).
         if (leftDuration < 5 || rightDuration < 5) return null;
+        // In/out points live in source frames: a slowed clip consumes
+        // fewer source frames per timeline frame.
+        const consumed = leftDuration * clipSpeed(clip);
         const left: TimelineClip = {
           ...clip,
           durationInFrames: leftDuration,
-          outPoint: clip.inPoint + leftDuration,
+          outPoint: clip.inPoint + consumed,
           effects: clip.effects.map((e) => ({ ...e })),
         };
         const right: TimelineClip = {
@@ -403,7 +416,7 @@ export const useEditorStore = create<EditorState>((set) => ({
           id: uuidv4(),
           startFrame: frame,
           durationInFrames: rightDuration,
-          inPoint: clip.inPoint + leftDuration,
+          inPoint: clip.inPoint + consumed,
           effects: clip.effects.map((e) => ({ ...e })),
         };
         return { left, right };
@@ -508,16 +521,18 @@ export const useEditorStore = create<EditorState>((set) => ({
       const main = state.tracks.flatMap((t) => t.clips).find((c) => c.id === clipId);
       if (main?.linkedClipId) withPartner.add(main.linkedClipId);
       const trimOne = (clip: TimelineClip) => {
+        // Timeline-frame deltas map to source frames through the rate.
+        const rate = clipSpeed(clip);
         if (side === 'in') {
           const newStart = clip.startFrame + deltaFrames;
           const newDuration = clip.durationInFrames - deltaFrames;
-          const newInPoint = clip.inPoint + deltaFrames;
+          const newInPoint = clip.inPoint + deltaFrames * rate;
           if (newDuration < 5 || newStart < 0) return clip;
           return { ...clip, startFrame: newStart, durationInFrames: newDuration, inPoint: newInPoint };
         }
         const newDuration = clip.durationInFrames + deltaFrames;
         if (newDuration < 5) return clip;
-        return { ...clip, durationInFrames: newDuration, outPoint: clip.outPoint + deltaFrames };
+        return { ...clip, durationInFrames: newDuration, outPoint: clip.outPoint + deltaFrames * rate };
       };
       let changed = false;
       const tracks = state.tracks.map((track) => ({
@@ -535,6 +550,29 @@ export const useEditorStore = create<EditorState>((set) => ({
         ...pushHistory(state, `trim:${clipId}:${side}`),
         tracks,
       };
+    }),
+
+  setClipSpeed: (clipId, speed) =>
+    set((state) => {
+      const rate = clampSpeed(speed);
+      // Linked partner retimes in lockstep so picture and sound stay in sync.
+      const withPartner = new Set<string>([clipId]);
+      const main = state.tracks.flatMap((t) => t.clips).find((c) => c.id === clipId);
+      if (main?.linkedClipId) withPartner.add(main.linkedClipId);
+      let changed = false;
+      const tracks = state.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) => {
+          if (!withPartner.has(clip.id)) return clip;
+          const span = clip.outPoint - clip.inPoint;
+          const durationInFrames = Math.max(1, Math.round(span / rate));
+          if (clipSpeed(clip) === rate && clip.durationInFrames === durationInFrames) return clip;
+          changed = true;
+          return { ...clip, speed: rate, durationInFrames };
+        }),
+      }));
+      if (!changed) return state;
+      return { ...pushHistory(state), tracks };
     }),
 
   undo: () =>

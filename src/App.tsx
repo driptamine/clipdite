@@ -8,7 +8,7 @@ import ProjectPanel from './components/ProjectPanel/ProjectPanel';
 import SourceMonitor from './components/SourceMonitor/SourceMonitor';
 import ProgramMonitor from './components/ProgramMonitor/ProgramMonitor';
 import Timeline from './components/Timeline/Timeline';
-import EffectsPanel from './components/EffectsPanel/EffectsPanel';
+import EffectsPanel, { SHOW_CLIP_PROPERTIES_EVENT } from './components/EffectsPanel/EffectsPanel';
 import {
   App as AppRoot,
   MainContent,
@@ -159,6 +159,12 @@ export default function App() {
     if ((e.metaKey || e.ctrlKey) && e.code === 'KeyY') {
       e.preventDefault();
       useEditorStore.getState().redo();
+      return;
+    }
+
+    if ((e.metaKey || e.ctrlKey) && e.code === 'KeyR') {
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent(SHOW_CLIP_PROPERTIES_EVENT));
       return;
     }
 
