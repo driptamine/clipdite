@@ -436,7 +436,10 @@ export default function Timeline() {
     const originalEdge = dragged
       ? (side === 'in' ? dragged.startFrame : dragged.startFrame + dragged.durationInFrames)
       : 0;
-    let applied = 0;
+    // Absolute-frame bookkeeping: `total` below is an absolute timeline
+    // edge, so the already-applied offset starts at the original edge —
+    // otherwise the first pointermove would add the whole edge as a jump.
+    let applied = originalEdge;
     let guideAt: number | null = null;
     // Edge of the clip as it actually sits in the store right now. After a
     // clamped trim it can lag behind `applied`; re-syncing keeps the edge
@@ -452,7 +455,7 @@ export default function Timeline() {
       const diff = total - applied;
       if (diff === 0) return;
       trimClip(clipId, side, diff);
-      applied = currentEdge() - originalEdge;
+      applied = currentEdge();
       setSnapGuideFrame(guideFrame);
     };
 

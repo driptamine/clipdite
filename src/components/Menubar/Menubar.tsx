@@ -154,7 +154,13 @@ export default function Menubar() {
         <MenuItem
           key={menu.label}
           className={cx(openMenu === i && MenuItemActive)}
-          onMouseDown={() => setOpenMenu(openMenu === i ? null : i)}
+          onMouseDown={(e) => {
+            // Item clicks bubble up from the open dropdown — only the
+            // title itself toggles, otherwise the menu closes on
+            // mousedown and no item action ever fires.
+            if (e.target !== e.currentTarget) return;
+            setOpenMenu(openMenu === i ? null : i);
+          }}
           onMouseEnter={() => openMenu !== null && setOpenMenu(i)}
         >
           {menu.label}
